@@ -42,7 +42,7 @@ fn group_json(req: HttpRequest, db: DbWrapper) -> impl Responder {
 	let mut uri_parts = Parts::from(uri.to_owned());
 	let mut actor = actor::Group::default();
 	uri_parts.path_and_query = Some(PathAndQuery::from_shared((
-		String::from("/to") + uri_parts.path_and_query.unwrap().as_str()
+		String::from("/to/") + &req.match_info().query("groupname")
 	).into()).unwrap());
 
 	actor.ap_actor_props.inbox = Uri::from_parts(uri_parts).unwrap().to_string().into();
