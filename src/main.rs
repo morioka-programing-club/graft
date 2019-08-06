@@ -33,10 +33,11 @@ fn into_value(row: &Row, name: &str, col_type: &Type) -> Value {
 	]
 }
 
-fn group(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn group() -> impl Responder {
+	// Maybe a web interface
 }
 
-fn group_json(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn group_json(req: HttpRequest) -> impl Responder {
 	let uri = req.uri();
 	let uri_str = &uri.to_string();
 	let mut uri_parts = Parts::from(uri.to_owned());
@@ -98,7 +99,7 @@ fn create(req: HttpRequest, db: DbWrapper) -> impl Responder {
 	client.execute(&statements.create_group, &[&req.match_info().query("groupname")]).wait().unwrap();
 }
 
-fn delete(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn delete() -> impl Responder {
 	"Deleting a group is not supported"
 }
 
