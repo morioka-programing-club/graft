@@ -160,28 +160,23 @@ fn main() {
 		let db = web::Data::new(Mutex::new(RefCell::new(db)));
 		HttpServer::new(move || {
 			App::new()
-			.data(db.clone())
-			.service(
-				web::scope("/of/{groupname}")
+				.register_data(db.clone())
 				.service(
-					web::resource("/")
-						.route(web::get().to(group))
-						.route(web::post().to(group_json))
-						.route(web::put().to(create))
-						.route(web::delete().to(delete))
-					)
-					.service(
-						web::resource("/all")
-						.route(web::get().to(outbox))
-						.route(web::post().to(outbox))
-					)
-				)
-				.service(
-					web::resource("/to/{groupname}")
+					web::scope("/of/{groupname}")
+						.service(web::resource("")
+							.route(web::get().to(group))
+							.route(web::post().to(group_json))
+							.route(web::put().to(create))
+							.route(web::delete().to(delete))
+						).service(web::resource("/all")
+							.route(web::get().to(outbox))
+							.route(web::post().to(outbox))
+						)
+				).service(web::resource("/to/{groupname}")
 					.route(web::get().to(inbox))
 					.route(web::post().to(inbox))
 				)
-			}).bind_ssl("127.0.0.1:8088", builder)?.run()?;
+		}).bind_ssl("127.0.0.1:8088", builder)?.start();
 		Ok(())
 	});
 
