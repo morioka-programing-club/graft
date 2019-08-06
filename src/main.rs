@@ -138,6 +138,10 @@ fn main() {
 		Arbiter::spawn(conn.map_err(|e| panic!("{}", e)));
 		future::join_all(vec![
 			// Insert SQL statements here
+			cl.prepare("SELECT * FROM messages WHERE reciever = $1 ORDER BY ctime;"), // get inbox
+			cl.prepare("SELECT * FROM messages WHERE sender = $1 ORDER BY ctime;"), // get outbox
+			cl.prepare("INSERT INTO actors (actortype, id) VALUES ($1, $2);"), // create actor
+			cl.prepare("DELETE FROM actors WHERE actortype = 'organization' AND id = $1;") // delete group
 		]).and_then(move |statements| {
 			let mut iter = statements.into_iter();
 			Ok(Db {
