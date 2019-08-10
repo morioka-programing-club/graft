@@ -1,14 +1,61 @@
+use std::error::Error;
 use futures::future;
 use actix_web::{HttpServer, App, web, HttpRequest, Responder};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use serde_json::{Value, Map};
 use activitypub::{actor, collection};
 use actix_web::http::uri::{Uri, Parts, PathAndQuery};
-use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::Type};
+use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind, IsNull, ToSql}};
 use std::cell::{RefCell, RefMut};
 use std::sync::{Mutex};
 use std::io::{self, ErrorKind, stdin, stdout, Write};
 use actix::prelude::*;
+
+#[derive(Debug)]
+enum ActorVariant {
+	User,
+	Group
+}
+
+// Manually expanded https://github.com/sfackler/rust-postgres-derive since it didn't work with tokio-postgres
+impl ToSql for ActorVariant {
+	fn to_sql(&self, _type: &Type, buf: &mut Vec<u8>) -> Result<IsNull, Box<Error + Sync + Send>> {
+		let s = match self {
+            ActorVariant::User => "member",
+			ActorVariant::Group => "organization"
+        };
+
+        buf.extend_from_slice(s.as_bytes());
+        Ok(IsNull::No)
+    }
+
+    fn accepts(type_: &Type) -> bool {
+		if type_.name() != "actors_available" {
+            return false;
+        }
+
+        match *type_.kind() {
+            Kind::Enum(ref variants) => {
+                if variants.len() != 2 {
+                    return false;
+                }
+
+                variants.iter().all(|v| {
+                    match &**v {
+                        "member" => true,
+                        "organization" => true,
+                        _ => false
+                    }
+                })
+            }
+            _ => false
+        }
+    }
+
+    fn to_sql_checked(&self, type_: &Type, buf: &mut Vec<u8>) -> Result<IsNull, Box<Error + Sync + Send>> {
+		self.to_sql(type_, buf)
+	}
+}
 
 fn into_value(row: &Row, name: &str, col_type: &Type) -> Value {
 	macro_rules! from_sql {
@@ -96,7 +143,10 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Responder {
 fn create(req: HttpRequest, db: DbWrapper) -> impl Responder {
 	let ref_db = db.lock().unwrap();
 	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	client.execute(&statements.create_group, &[&req.match_info().query("groupname")]).wait().unwrap();
+	client.execute(&statements.create_group, &[
+		&ActorVariant::Group,
+		&req.match_info().query("groupname")
+	]).wait().unwrap();
 }
 
 fn delete() -> impl Responder {
