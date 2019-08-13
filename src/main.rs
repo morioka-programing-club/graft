@@ -1,10 +1,10 @@
 use std::error::Error;
 use futures::future;
-use actix_web::{HttpServer, App, web, HttpRequest, Responder};
+use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{ResponseError, InternalError}};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use serde_json::{Value, Map};
 use activitypub::{actor, collection};
-use actix_web::http::uri::{Uri, Parts, PathAndQuery};
+use actix_web::http::{StatusCode, uri::{Uri, Parts, PathAndQuery}};
 use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind, IsNull, ToSql}};
 use std::cell::{RefCell, RefMut};
 use std::sync::{Mutex};
@@ -100,7 +100,7 @@ fn group_json(req: HttpRequest) -> impl Responder {
     serde_json::to_string(&actor)
 }
 
-fn inbox(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = impl ResponseError> {
 	let uri = req.uri().to_string();
 	let mut inbox = collection::OrderedCollection::default();
 	inbox.object_props.id = Some(Value::from(uri.to_owned()));
@@ -108,19 +108,20 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Responder {
 
 	let ref_db = db.lock().unwrap();
 	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	inbox.collection_props.items = client
-		.query(&statements.get_inbox, &[&req.match_info().query("groupname")])
+	client.query(&statements.get_inbox, &[&req.match_info().query("groupname")])
 		.map(|row| row.columns().into_iter()
 			.map(|col| {
 				let name = col.name();
 				(String::from(name), into_value(&row, name, col.type_()))
 			})
 			.collect::<Map<String, Value>>())
-		.collect().wait().unwrap().into();
-    serde_json::to_string(&inbox)
+		.collect().and_then(move |items| {
+			inbox.collection_props.items = items.into();
+			serde_json::to_string(&inbox).map_err(|_| panic!("JSON serialization error"))
+		}).map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-fn outbox(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = impl ResponseError> {
 	let uri = req.uri().to_string();
 	let mut outbox = collection::OrderedCollection::default();
 	outbox.object_props.id = Some(Value::from(uri.to_owned()));
@@ -128,25 +129,25 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Responder {
 
 	let ref_db = db.lock().unwrap();
 	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	outbox.collection_props.items = client
-		.query(&statements.get_outbox, &[&req.match_info().query("groupname")])
+	client.query(&statements.get_outbox, &[&req.match_info().query("groupname")])
 		.map(|row| row.columns().into_iter()
 			.map(|col| {
 				let name = col.name();
 				(String::from(name), into_value(&row, name, col.type_()))
-			})
-			.collect::<Map<String, Value>>())
-		.collect().wait().unwrap().into();
-    serde_json::to_string(&outbox)
+			}).collect::<Map<String, Value>>())
+		.collect().and_then(move |items| {
+			outbox.collection_props.items = items.into();
+			serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
+		}).map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-fn create(req: HttpRequest, db: DbWrapper) -> impl Responder {
+fn create(req: HttpRequest, db: DbWrapper) -> impl Future<Item = &'static str, Error = impl ResponseError> {
 	let ref_db = db.lock().unwrap();
 	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
 	client.execute(&statements.create_group, &[
 		&ActorVariant::Group,
 		&req.match_info().query("groupname")
-	]).wait().unwrap();
+	]).map(|_| "Group succesfully created").map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 fn delete() -> impl Responder {
@@ -217,15 +218,15 @@ fn main() {
 						.service(web::resource("")
 							.route(web::get().to(group))
 							.route(web::post().to(group_json))
-							.route(web::put().to(create))
+							.route(web::put().to_async(create))
 							.route(web::delete().to(delete))
 						).service(web::resource("/all")
-							.route(web::get().to(outbox))
-							.route(web::post().to(outbox))
+							.route(web::get().to_async(outbox))
+							.route(web::post().to_async(outbox))
 						)
 				).service(web::resource("/to/{groupname}")
-					.route(web::get().to(inbox))
-					.route(web::post().to(inbox))
+					.route(web::get().to_async(inbox))
+					.route(web::post().to_async(inbox))
 				)
 		}).bind_ssl("127.0.0.1:8088", builder)?.start();
 		Ok(())
