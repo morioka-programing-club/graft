@@ -1,13 +1,12 @@
 use std::error::Error;
 use futures::future;
-use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{ResponseError, InternalError}};
+use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}, dev::RequestHead};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use serde_json::{Value, Map};
 use activitypub::{actor, collection};
 use actix_web::http::{StatusCode, uri::{Uri, Parts, PathAndQuery}};
 use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind, IsNull, ToSql}};
-use std::cell::{RefCell, RefMut};
-use std::sync::{Mutex};
+use futures_locks::Mutex;
 use std::io::{self, ErrorKind, stdin, stdout, Write};
 use actix::prelude::*;
 
@@ -100,54 +99,58 @@ fn group_json(req: HttpRequest) -> impl Responder {
     serde_json::to_string(&actor)
 }
 
-fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = impl ResponseError> {
+fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = ActixError> {
 	let uri = req.uri().to_string();
 	let mut inbox = collection::OrderedCollection::default();
 	inbox.object_props.id = Some(Value::from(uri.to_owned()));
 	inbox.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
 
-	let ref_db = db.lock().unwrap();
-	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	client.query(&statements.get_inbox, &[&req.match_info().query("groupname")])
-		.map(|row| row.columns().into_iter()
-			.map(|col| {
-				let name = col.name();
-				(String::from(name), into_value(&row, name, col.type_()))
-			})
-			.collect::<Map<String, Value>>())
-		.collect().and_then(move |items| {
-			inbox.collection_props.items = items.into();
-			serde_json::to_string(&inbox).map_err(|_| panic!("JSON serialization error"))
-		}).map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
+	db.lock().from_err().and_then(move |mut db_locked| {
+		let (client, statements) = db_locked.get();
+		client.query(&statements.get_inbox, &[&req.match_info().query("groupname")])
+			.map(|row| row.columns().into_iter()
+				.map(|col| {
+					let name = col.name();
+					(String::from(name), into_value(&row, name, col.type_()))
+				})
+				.collect::<Map<String, Value>>())
+			.collect().and_then(move |items| {
+				inbox.collection_props.items = items.into();
+				serde_json::to_string(&inbox).map_err(|_| panic!("JSON serialization error"))
+			}).map_err(error::ErrorInternalServerError)
+	})
 }
 
-fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = impl ResponseError> {
+fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = ActixError> {
 	let uri = req.uri().to_string();
 	let mut outbox = collection::OrderedCollection::default();
 	outbox.object_props.id = Some(Value::from(uri.to_owned()));
 	outbox.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
 
-	let ref_db = db.lock().unwrap();
-	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	client.query(&statements.get_outbox, &[&req.match_info().query("groupname")])
-		.map(|row| row.columns().into_iter()
-			.map(|col| {
-				let name = col.name();
-				(String::from(name), into_value(&row, name, col.type_()))
-			}).collect::<Map<String, Value>>())
-		.collect().and_then(move |items| {
-			outbox.collection_props.items = items.into();
-			serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
-		}).map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
+	db.lock().from_err().and_then(move |mut db_locked| {
+		let (client, statements) = db_locked.get();
+		client.query(&statements.get_outbox, &[&req.match_info().query("groupname")])
+			.map(|row| row.columns().into_iter()
+				.map(|col| {
+					let name = col.name();
+					(String::from(name), into_value(&row, name, col.type_()))
+				})
+				.collect::<Map<String, Value>>())
+			.collect().and_then(move |items| {
+				outbox.collection_props.items = items.into();
+				serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
+			}).map_err(error::ErrorInternalServerError)
+	})
 }
 
-fn create(req: HttpRequest, db: DbWrapper) -> impl Future<Item = &'static str, Error = impl ResponseError> {
-	let ref_db = db.lock().unwrap();
-	let (mut client, statements) = RefMut::map_split(ref_db.borrow_mut(), |db| (&mut db.client, &mut db.statements));
-	client.execute(&statements.create_group, &[
-		&ActorVariant::Group,
-		&req.match_info().query("groupname")
-	]).map(|_| "Group succesfully created").map_err(|e| InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR))
+fn create(req: HttpRequest, db: DbWrapper) -> impl Future<Item = &'static str, Error = ActixError> {
+	db.lock().from_err().and_then(move |mut db_locked| {
+		let (client, statements) = db_locked.get();
+		client.execute(&statements.create_group, &[
+			&ActorVariant::Group,
+			&req.match_info().query("groupname")
+		]).map(|_| "Group succesfully created").map_err(error::ErrorInternalServerError)
+	})
 }
 
 fn delete() -> impl Responder {
@@ -163,6 +166,12 @@ impl Actor for Db {
     type Context = Context<Self>;
 }
 
+impl Db {
+	fn get(&mut self) -> (&mut Client, &Statements) {
+		(&mut self.client, &self.statements)
+	}
+}
+
 struct Statements {
 	get_inbox: Statement,
 	get_outbox: Statement,
@@ -170,7 +179,7 @@ struct Statements {
 	delete_group: Statement
 }
 
-type DbWrapper = web::Data<Mutex<RefCell<Db>>>;
+type DbWrapper = web::Data<Mutex<Db>>;
 
 fn main() {
     // load ssl keys
@@ -209,7 +218,7 @@ fn main() {
 	}).and_then(|db| {
 		println!("SQL Statements prepared successfully");
 
-		let db = web::Data::new(Mutex::new(RefCell::new(db)));
+		let db = web::Data::new(Mutex::new(db));
 		HttpServer::new(move || {
 			App::new()
 				.register_data(db.clone())
