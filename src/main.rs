@@ -157,6 +157,50 @@ fn delete() -> impl Responder {
 	"Deleting a group is not supported"
 }
 
+fn process_senders(json: Value, id: u32, db: DbWrapper) -> Box<Future<Item = (), Error = ActixError>> {
+	match json {
+		Value::String(str) => {
+			Box::new(db.lock().from_err().join(future::ok(str)).and_then(move |(mut db_locked, str)| {
+				let (client, statements) = db_locked.get();
+				client.execute(&statements.send_message, &[&str, &id])
+					.map(|_| ()).map_err(error::ErrorInternalServerError)
+			}))
+		},
+		Value::Object(obj) => {
+			Box::new(db.lock().from_err().join(future::ok(obj)).and_then(move |(mut db_locked, obj)| {
+				let (client, statements) = db_locked.get();
+				client.execute(&statements.send_message, &[&obj["id"].as_str(), &Some(id)])
+					.map(|_| ()).map_err(error::ErrorInternalServerError)
+			}))
+		},
+		Value::Array(arr) => Box::new(
+			future::join_all(arr.to_owned().into_iter().map(move |el| process_senders(el, id, db.clone()))).map(|_| ())
+				.map_err(|e| error::InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR).into())
+		),
+		_ => Box::new(future::err(error::ErrorBadRequest("Invaild actor")))
+	}
+}
+
+fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
+	if !json["type"].is_string() {
+		return Box::new(future::err(error::ErrorBadRequest("Non-activitystream object recieved")))
+	}
+
+	match json["type"].as_str().unwrap() {
+		"Create" => {
+			Box::new(db.lock().from_err().join(future::ok(json)).and_then(|(mut db_locked, json)| {
+				let (client, statements) = db_locked.get();
+				client.query(&statements.create_message, &[&json["object"]["content"].as_str()])
+					.map_err(error::ErrorInternalServerError)
+					.collect().join(future::ok(json))
+					.and_then(move |(id, mut json)| process_senders(json["actor"].take(), id[0].get(0), db.clone()))
+					.map(|_| "".to_string())
+			}))
+		},
+		_ => Box::new(future::err(error::ErrorBadRequest("Unknown object type")))
+	}
+}
+
 struct Db {
 	client: Client,
 	statements: Statements
@@ -175,6 +219,8 @@ impl Db {
 struct Statements {
 	get_inbox: Statement,
 	get_outbox: Statement,
+	create_message: Statement,
+	send_message: Statement,
 	create_group: Statement,
 	delete_group: Statement
 }
@@ -201,6 +247,10 @@ fn main() {
 			// Insert SQL statements here
 			cl.prepare("SELECT * FROM messages WHERE reciever = $1 ORDER BY ctime;"), // get inbox
 			cl.prepare("SELECT * FROM messages WHERE sender = $1 ORDER BY ctime;"), // get outbox
+			cl.prepare("INSERT INTO messages (content, ctime, mtime) VALUES ($1, $2, $2) RETURNING id;"), // create message
+			cl.prepare(r#"
+INSERT INTO messages_sent (actor, message) VALUES ($2, $1);
+INSERT INTO messages_recieved (actor, message) VALUES ($3, $1);"#), // send message
 			cl.prepare("INSERT INTO actors (actortype, id) VALUES ($1, $2);"), // create actor
 			cl.prepare("DELETE FROM actors WHERE actortype = 'organization' AND id = $1;") // delete group
 		]).and_then(move |statements| {
@@ -210,6 +260,8 @@ fn main() {
 				statements: Statements {
 					get_inbox: iter.next().unwrap(),
 					get_outbox: iter.next().unwrap(),
+					create_message: iter.next().unwrap(),
+					send_message: iter.next().unwrap(),
 					create_group: iter.next().unwrap(),
 					delete_group: iter.next().unwrap()
 				}
@@ -231,7 +283,13 @@ fn main() {
 							.route(web::delete().to(delete))
 						).service(web::resource("/all")
 							.route(web::get().to_async(outbox))
-							.route(web::post().to_async(outbox))
+							.route(web::post().guard(|head: &RequestHead| {
+								match head.headers.get("Content-Type") {
+									Some(v) => v == "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
+										|| v == "application/activity+json",
+									None => false
+								}
+							}).to_async(post))
 						)
 				).service(web::resource("/to/{groupname}")
 					.route(web::get().to_async(inbox))
