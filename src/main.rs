@@ -9,6 +9,7 @@ use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind,
 use futures_locks::Mutex;
 use std::io::{self, ErrorKind, stdin, stdout, Write};
 use actix::prelude::*;
+use chrono::Utc;
 
 #[derive(Debug)]
 enum ActorVariant {
@@ -190,7 +191,7 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 		"Create" => {
 			Box::new(db.lock().from_err().join(future::ok(json)).and_then(|(mut db_locked, json)| {
 				let (client, statements) = db_locked.get();
-				client.query(&statements.create_message, &[&json["object"]["content"].as_str()])
+				client.query(&statements.create_message, &[&json["object"]["content"].as_str(), &Utc::now()])
 					.map_err(error::ErrorInternalServerError)
 					.collect().join(future::ok(json))
 					.and_then(move |(id, mut json)| process_senders(json["actor"].take(), id[0].get(0), db.clone()))
