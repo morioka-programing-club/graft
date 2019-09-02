@@ -158,24 +158,48 @@ fn delete() -> impl Responder {
 	"Deleting a group is not supported"
 }
 
-fn process_senders(json: Value, id: u32, db: DbWrapper) -> Box<Future<Item = (), Error = ActixError>> {
+fn process_senders(json: Value, id: i64, db: DbWrapper) -> Box<Future<Item = (), Error = ActixError>> {
 	match json {
 		Value::String(str) => {
 			Box::new(db.lock().from_err().join(future::ok(str)).and_then(move |(mut db_locked, str)| {
 				let (client, statements) = db_locked.get();
-				client.execute(&statements.send_message, &[&str, &id])
+				client.execute(&statements.add_sender, &[&id, &str])
 					.map(|_| ()).map_err(error::ErrorInternalServerError)
 			}))
 		},
 		Value::Object(obj) => {
 			Box::new(db.lock().from_err().join(future::ok(obj)).and_then(move |(mut db_locked, obj)| {
 				let (client, statements) = db_locked.get();
-				client.execute(&statements.send_message, &[&obj["id"].as_str(), &Some(id)])
+				client.execute(&statements.add_sender, &[&id, &obj["id"].as_str()])
 					.map(|_| ()).map_err(error::ErrorInternalServerError)
 			}))
 		},
 		Value::Array(arr) => Box::new(
 			future::join_all(arr.to_owned().into_iter().map(move |el| process_senders(el, id, db.clone()))).map(|_| ())
+				.map_err(|e| error::InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR).into())
+		),
+		_ => Box::new(future::err(error::ErrorBadRequest("Invaild actor")))
+	}
+}
+
+fn process_recievers(json: Value, id: i32, db: DbWrapper) -> Box<Future<Item = (), Error = ActixError>> {
+	match json {
+		Value::String(str) => {
+			Box::new(db.lock().from_err().join(future::ok(str)).and_then(move |(mut db_locked, str)| {
+				let (client, statements) = db_locked.get();
+				client.execute(&statements.add_reciever, &[&id, &str])
+					.map(|_| ()).map_err(error::ErrorInternalServerError)
+			}))
+		},
+		Value::Object(obj) => {
+			Box::new(db.lock().from_err().join(future::ok(obj)).and_then(move |(mut db_locked, obj)| {
+				let (client, statements) = db_locked.get();
+				client.execute(&statements.add_reciever, &[&id, &obj["id"].as_str()])
+					.map(|_| ()).map_err(error::ErrorInternalServerError)
+			}))
+		},
+		Value::Array(arr) => Box::new(
+			future::join_all(arr.to_owned().into_iter().map(move |el| process_recievers(el, id, db.clone()))).map(|_| ())
 				.map_err(|e| error::InternalError::new(e, StatusCode::INTERNAL_SERVER_ERROR).into())
 		),
 		_ => Box::new(future::err(error::ErrorBadRequest("Invaild actor")))
@@ -194,7 +218,10 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 				client.query(&statements.create_message, &[&json["object"]["content"].as_str(), &Utc::now()])
 					.map_err(error::ErrorInternalServerError)
 					.collect().join(future::ok(json))
-					.and_then(move |(id, mut json)| process_senders(json["actor"].take(), id[0].get(0), db.clone()))
+					.and_then(move |(id, mut json)| {
+						process_senders(json["actor"].take(), id[0].get(0), db.clone())
+							.join(process_recievers(json["to"].take(), id[0].get(0), db.clone()))
+					})
 					.map(|_| "".to_string())
 			}))
 		},
@@ -221,7 +248,8 @@ struct Statements {
 	get_inbox: Statement,
 	get_outbox: Statement,
 	create_message: Statement,
-	send_message: Statement,
+	add_sender: Statement,
+	add_reciever: Statement,
 	create_group: Statement,
 	delete_group: Statement
 }
@@ -246,12 +274,11 @@ fn main() {
 		Arbiter::spawn(conn.map_err(|e| panic!("{}", e)));
 		future::join_all(vec![
 			// Insert SQL statements here
-			cl.prepare("SELECT * FROM messages WHERE reciever = $1 ORDER BY ctime;"), // get inbox
-			cl.prepare("SELECT * FROM messages WHERE sender = $1 ORDER BY ctime;"), // get outbox
+			cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_recieved WHERE actor = $1) ORDER BY ctime;"), // get inbox
+			cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_sent WHERE actor = $1) ORDER BY ctime;"), // get outbox
 			cl.prepare("INSERT INTO messages (content, ctime, mtime) VALUES ($1, $2, $2) RETURNING id;"), // create message
-			cl.prepare(r#"
-INSERT INTO messages_sent (actor, message) VALUES ($2, $1);
-INSERT INTO messages_recieved (actor, message) VALUES ($3, $1);"#), // send message
+			cl.prepare("INSERT INTO messages_sent (actor, message) VALUES ($2, $1);"), // add sender
+			cl.prepare("INSERT INTO messages_recieved (actor, message) VALUES ($2, $1);"), // add reciever
 			cl.prepare("INSERT INTO actors (actortype, id) VALUES ($1, $2);"), // create actor
 			cl.prepare("DELETE FROM actors WHERE actortype = 'organization' AND id = $1;") // delete group
 		]).and_then(move |statements| {
@@ -262,7 +289,8 @@ INSERT INTO messages_recieved (actor, message) VALUES ($3, $1);"#), // send mess
 					get_inbox: iter.next().unwrap(),
 					get_outbox: iter.next().unwrap(),
 					create_message: iter.next().unwrap(),
-					send_message: iter.next().unwrap(),
+					add_sender: iter.next().unwrap(),
+					add_reciever: iter.next().unwrap(),
 					create_group: iter.next().unwrap(),
 					delete_group: iter.next().unwrap()
 				}
