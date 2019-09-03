@@ -97,8 +97,8 @@ pub struct Statements {
 	pub create_message: Statement,
 	pub add_sender: Statement,
 	pub add_reciever: Statement,
-	pub create_group: Statement,
-	pub delete_group: Statement
+	pub create_actor: Statement,
+	pub delete_actor: Statement
 }
 
 pub type DbWrapper = web::Data<Mutex<Db>>;
@@ -165,7 +165,7 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 					cl.prepare("INSERT INTO messages_sent (actor, message) VALUES ($2, $1);"), // add sender
 					cl.prepare("INSERT INTO messages_recieved (actor, message) VALUES ($2, $1);"), // add reciever
 					cl.prepare("INSERT INTO actors (actortype, id) VALUES ($1, $2);"), // create actor
-					cl.prepare("DELETE FROM actors WHERE actortype = 'organization' AND id = $1;") // delete group
+					cl.prepare("DELETE FROM actors WHERE actortype = $2 AND id = $1;") // delete actor
 				]).and_then(move |statements| {
 					println!("SQL Statements prepared successfully");
 					let mut iter = statements.into_iter();
@@ -177,8 +177,8 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 							create_message: iter.next().unwrap(),
 							add_sender: iter.next().unwrap(),
 							add_reciever: iter.next().unwrap(),
-							create_group: iter.next().unwrap(),
-							delete_group: iter.next().unwrap()
+							create_actor: iter.next().unwrap(),
+							delete_actor: iter.next().unwrap()
 						}
 					})))
 				}).map_err(|e| io::Error::new(ErrorKind::Other, e))

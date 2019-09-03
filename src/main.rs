@@ -79,7 +79,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 fn create(req: HttpRequest, db: DbWrapper) -> impl Future<Item = &'static str, Error = ActixError> {
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
-		client.execute(&statements.create_group, &[
+		client.execute(&statements.create_actor, &[
 			&db::ActorVariant::Group,
 			&req.match_info().query("groupname")
 		]).map(|_| "Group succesfully created").map_err(error::ErrorInternalServerError)
