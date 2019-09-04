@@ -11,6 +11,14 @@ use chrono::Utc;
 mod db;
 use db::{DbWrapper, process_senders, process_recievers};
 
+fn is_activitypub(head: &RequestHead) -> bool {
+	match head.headers.get("Content-Type") {
+		Some(v) => v == "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
+			|| v == "application/activity+json",
+		None => false
+	}
+}
+
 fn group() -> impl Responder {
 	// Maybe a web interface
 	unimplemented!();
@@ -138,13 +146,7 @@ fn main() {
 							.route(web::delete().to(delete))
 						).service(web::resource("/all")
 							.route(web::get().to_async(outbox))
-							.route(web::post().guard(|head: &RequestHead| {
-								match head.headers.get("Content-Type") {
-									Some(v) => v == "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
-										|| v == "application/activity+json",
-									None => false
-								}
-							}).to_async(post))
+							.route(web::post().guard(is_activitypub).to_async(post))
 						)
 				).service(web::resource("/to/{groupname}")
 					.route(web::get().to_async(inbox))
