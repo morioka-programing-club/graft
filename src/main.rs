@@ -7,6 +7,7 @@ use actix_web::http::uri::{Uri, Parts, PathAndQuery};
 use std::io::{stdin, stdout, Write};
 use actix::prelude::*;
 use chrono::Utc;
+use env_logger;
 
 mod db;
 use db::{DbWrapper, process_senders, process_recievers};
@@ -122,6 +123,8 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 }
 
 fn main() {
+	env_logger::init();
+
     // load ssl keys
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     builder.set_private_key_file("key.pem", SslFiletype::PEM).unwrap();
