@@ -7,7 +7,7 @@ CREATE TYPE actors_available AS ENUM ('member', 'organization');
 
 CREATE TABLE actors (
 	id text PRIMARY KEY,
-	actortype actors_available PRIMARY KEY
+	actortype actors_available
 );
 
 CREATE TABLE messages (
