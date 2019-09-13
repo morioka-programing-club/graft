@@ -18,6 +18,8 @@ use activitypub_util::is_activitypub_request;
 const HOST: &str = "localhost:8088";
 const PROTOCOL_HOST: &str = "https://localhost:8088";
 
+fn is_username(name: &str) -> bool {
+	name.starts_with("@")
 }
 
 fn group() -> impl Responder {
@@ -31,7 +33,7 @@ fn group_json(req: HttpRequest) -> impl Responder {
 	let mut uri_parts = Parts::from(uri.to_owned());
 	let mut actor = actor::Group::default();
 	uri_parts.path_and_query = Some(PathAndQuery::from_shared((
-		String::from("/to/") + &req.match_info().query("groupname")
+		String::from("/to/") + &req.match_info().query("actorname")
 	).into()).unwrap());
 
 	actor.ap_actor_props.inbox = Uri::from_parts(uri_parts).unwrap().to_string().into();
@@ -49,7 +51,7 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
-		client.query(&statements.get_inbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("groupname"))])
+		client.query(&statements.get_inbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))])
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
@@ -71,7 +73,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
-		client.query(&statements.get_outbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("groupname"))])
+		client.query(&statements.get_outbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))])
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
@@ -85,14 +87,19 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 	})
 }
 
-fn create(req: HttpRequest, db: DbWrapper) -> impl Future<Item = &'static str, Error = ActixError> {
-	db.lock().from_err().and_then(move |mut db_locked| {
+fn create(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
+	Box::new(db.lock().from_err().and_then(move |mut db_locked| {
+		let mut name = req.match_info().query("actorname").to_owned();
+		let isuser = is_username(&name);
+		if isuser {name.remove(0);}
 		let (client, statements) = db_locked.get();
 		client.execute(&statements.create_actor, &[
-			&db::ActorVariant::Group,
-			&req.match_info().query("groupname")
-		]).map(|_| "Group succesfully created").map_err(error::ErrorInternalServerError)
-	})
+			&if isuser {db::ActorVariant::User} else {db::ActorVariant::Group},
+			&req.uri().to_string()
+		]).join(future::ok(isuser))
+			.map(|(_, isuser)| if isuser {"User"} else {"Group"}.to_owned() + " succesfully created")
+			.map_err(error::ErrorInternalServerError)
+	}))
 }
 
 fn delete() -> impl Responder {
@@ -122,6 +129,31 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 	}
 }
 
+fn user() -> impl Responder {
+	// Maybe a web interface
+	unimplemented!();
+}
+
+fn delete_user() -> impl Responder {
+	"Deleting a user is not supported"
+}
+
+fn user_json(req: HttpRequest) -> impl Responder {
+	let uri = req.uri();
+	let uri_str = &uri.to_string();
+	let mut uri_parts = Parts::from(uri.to_owned());
+	let mut actor = actor::Group::default();
+	uri_parts.path_and_query = Some(PathAndQuery::from_shared((
+		String::from("/to/") + &req.match_info().query("actorname")
+	).into()).unwrap());
+
+	actor.ap_actor_props.inbox = Uri::from_parts(uri_parts).unwrap().to_string().into();
+	actor.ap_actor_props.outbox = (uri_str.clone() + "/all").into();
+	actor.object_props.id = Some(Value::from(uri_str.to_owned()));
+	actor.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
+    serde_json::to_string(&actor)
+}
+
 fn main() {
 	env_logger::init();
 
@@ -141,7 +173,7 @@ fn main() {
 			App::new()
 				.register_data(db.clone())
 				.service(
-					web::scope("/of/{groupname}")
+					web::scope("/of/{actorname:[^/@][^/]*}")
 						.service(web::resource("")
 							.route(web::get().to(group))
 							.route(web::post().to(group_json))
@@ -151,7 +183,18 @@ fn main() {
 							.route(web::get().to_async(outbox))
 							.route(web::post().guard(is_activitypub_request).to_async(post))
 						)
-				).service(web::resource("/to/{groupname}")
+				).service(
+					web::scope("/of/{actorname:@[^/]+}")
+						.service(web::resource("")
+							.route(web::get().to(user))
+							.route(web::post().to(user_json))
+							.route(web::put().to_async(create))
+							.route(web::delete().to(delete_user))
+						).service(web::resource("/all")
+							.route(web::get().to_async(outbox))
+							.route(web::post().guard(is_activitypub_request).to_async(post))
+						)
+				).service(web::resource("/to/{actorname}")
 					.route(web::get().to_async(inbox))
 					.route(web::post().to_async(inbox))
 				)
