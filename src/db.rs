@@ -6,6 +6,9 @@ use std::error::Error;
 use actix::prelude::*;
 use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind, IsNull, ToSql}};
 use futures::future;
+use chrono::{DateTime, Utc};
+
+use crate::activitypub_util::format_timestamp_rfc3339_seconds_omitted;
 
 #[derive(Debug)]
 pub enum ActorVariant {
@@ -62,18 +65,22 @@ pub fn into_value(row: &Row, name: &str, col_type: &Type) -> Value {
 			}
 		}
 	}
-	from_sql![
-		(CHAR, i8),
-		(INT2, i16),
-		(INT4, i32),
-		(INT8, i64),
-		(OID, u32),
-		(FLOAT4, f32),
-		(FLOAT8, f64),
-		(BYTEA, &[u8]),
-		(TEXT, &str),
-		(BOOL, bool)
-	]
+	if col_type == &Type::TIMESTAMPTZ { format_timestamp_rfc3339_seconds_omitted(row.get::<&str, DateTime<Utc>>(name)).into() }
+	else {
+		from_sql![
+			(CHAR, i8),
+			(INT2, i16),
+			(INT4, i32),
+			(INT8, i64),
+			(OID, u32),
+			(FLOAT4, f32),
+			(FLOAT8, f64),
+			(BYTEA, &[u8]),
+			(TEXT, &str),
+			(BOOL, bool),
+			(TEXT_ARRAY, Vec<&str>)
+		]
+	}
 }
 
 pub struct Db {
