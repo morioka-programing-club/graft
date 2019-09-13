@@ -57,7 +57,7 @@ pub fn into_value(row: &Row, name: &str, col_type: &Type) -> Value {
 	macro_rules! from_sql {
 		($(($sql_type:ident, $type_to:ty)),*) => {
 			match col_type {
-				$(&Type::$sql_type => row.get::<&str, $type_to>(name).into(),)*
+				$(&Type::$sql_type => row.get::<&str, Option<$type_to>>(name).map_or(Value::Null, |v| v.into()),)*
 				_ => panic!("Specified SQL cell's type is not compatible to JSON")
 			}
 		}
