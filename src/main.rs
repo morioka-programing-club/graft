@@ -1,5 +1,5 @@
 use futures::future;
-use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}, dev::RequestHead};
+use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use serde_json::{Value, Map};
 use activitypub::{actor, collection};
@@ -12,12 +12,8 @@ use env_logger;
 mod db;
 use db::{DbWrapper, process_senders, process_recievers};
 
-fn is_activitypub(head: &RequestHead) -> bool {
-	match head.headers.get("Content-Type") {
-		Some(v) => v == "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
-			|| v == "application/activity+json",
-		None => false
-	}
+mod activitypub_util;
+use activitypub_util::is_activitypub_request;
 }
 
 fn group() -> impl Responder {
@@ -149,7 +145,7 @@ fn main() {
 							.route(web::delete().to(delete))
 						).service(web::resource("/all")
 							.route(web::get().to_async(outbox))
-							.route(web::post().guard(is_activitypub).to_async(post))
+							.route(web::post().guard(is_activitypub_request).to_async(post))
 						)
 				).service(web::resource("/to/{groupname}")
 					.route(web::get().to_async(inbox))
