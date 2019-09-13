@@ -16,6 +16,8 @@ mod activitypub_util;
 use activitypub_util::is_activitypub_request;
 
 const HOST: &str = "localhost:8088";
+const PROTOCOL_HOST: &str = "https://localhost:8088";
+
 }
 
 fn group() -> impl Responder {
@@ -47,7 +49,7 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
-		client.query(&statements.get_inbox, &[&req.match_info().query("groupname")])
+		client.query(&statements.get_inbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("groupname"))])
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
@@ -69,7 +71,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
-		client.query(&statements.get_outbox, &[&req.match_info().query("groupname")])
+		client.query(&statements.get_outbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("groupname"))])
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
