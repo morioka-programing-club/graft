@@ -14,6 +14,8 @@ use db::{DbWrapper, process_senders, process_recievers};
 
 mod activitypub_util;
 use activitypub_util::is_activitypub_request;
+
+const HOST: &str = "localhost:8088";
 }
 
 fn group() -> impl Responder {
@@ -151,7 +153,7 @@ fn main() {
 					.route(web::get().to_async(inbox))
 					.route(web::post().to_async(inbox))
 				)
-		}).bind_ssl("127.0.0.1:8088", builder)?.start();
+		}).bind_ssl(HOST, builder)?.start();
 		Ok(())
 	});
 
