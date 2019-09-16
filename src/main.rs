@@ -1,5 +1,5 @@
 use futures::future;
-use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}};
+use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}, middleware::Compress};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use serde_json::{Value, Map};
 use activitypub::{actor, collection};
@@ -212,6 +212,7 @@ fn main() {
 	let future = db::init(&user_name[0..len-1]).and_then(|db| {
 		HttpServer::new(move || {
 			App::new()
+				.wrap(Compress::default())
 				.register_data(db.clone())
 				.service(
 					web::scope("/of/{actorname:[^/@][^/]*}")
