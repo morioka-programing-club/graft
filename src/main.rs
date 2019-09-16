@@ -8,16 +8,24 @@ use std::io::{stdin, stdout, Write};
 use actix::prelude::*;
 use chrono::Utc;
 use env_logger;
+use tokio_postgres::types::Type;
 
 mod db;
 use db::{DbWrapper, process_senders, process_recievers};
 
 mod activitypub_util;
-use activitypub_util::is_activitypub_request;
+use activitypub_util::{is_activitypub_request, unwrap_short_vec};
+
+#[macro_use]
+extern crate lazy_static;
 
 const HOST: &str = "localhost:8088";
 const PROTOCOL_HOST: &str = "https://localhost:8088";
 const CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
+
+lazy_static! {
+	static ref ID: String = "id".to_string();
+}
 
 fn is_username(name: &str) -> bool {
 	name.starts_with("@")
@@ -59,7 +67,23 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 					(String::from(name), db::into_value(&row, &name, col.type_()))
 				})
 				.collect::<Map<String, Value>>())
-			.collect().and_then(move |items| {
+			.and_then(move |mut items| {
+				let (client, statements) = db_locked.get();
+				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
+
+				client.query(&statements.get_senders, &[&id])
+					.map(|sender| db::into_value(&sender, &0, &Type::TEXT))
+					.collect()
+					.join(
+						client.query(&statements.get_recievers, &[&id])
+							.map(|reciever| db::into_value(&reciever, &0, &Type::TEXT))
+							.collect()
+					).and_then(move |(senders, recievers)| {
+						items.insert("actor".to_string(), unwrap_short_vec(senders).into());
+						items.insert("to".to_string(), unwrap_short_vec(recievers).into());
+						Ok(items)
+					})
+			}).collect().and_then(move |items| {
 				inbox.collection_props.items = items.into();
 				serde_json::to_string(&inbox).map_err(|_| panic!("JSON serialization error"))
 			}).map_err(error::ErrorInternalServerError)
@@ -81,7 +105,23 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 					(String::from(name), db::into_value(&row, &name, col.type_()))
 				})
 				.collect::<Map<String, Value>>())
-			.collect().and_then(move |items| {
+			.and_then(move |mut items| {
+				let (client, statements) = db_locked.get();
+				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
+
+				client.query(&statements.get_senders, &[&id])
+					.map(|sender| db::into_value(&sender, &0, &Type::TEXT))
+					.collect()
+					.join(
+						client.query(&statements.get_recievers, &[&id])
+							.map(|reciever| db::into_value(&reciever, &0, &Type::TEXT))
+							.collect()
+					).and_then(move |(senders, recievers)| {
+						items.insert("actor".to_string(), unwrap_short_vec(senders).into());
+						items.insert("to".to_string(), unwrap_short_vec(recievers).into());
+						Ok(items)
+					})
+			}).collect().and_then(move |items| {
 				outbox.collection_props.items = items.into();
 				serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
 			}).map_err(error::ErrorInternalServerError)
