@@ -17,6 +17,7 @@ use activitypub_util::is_activitypub_request;
 
 const HOST: &str = "localhost:8088";
 const PROTOCOL_HOST: &str = "https://localhost:8088";
+const CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
 fn is_username(name: &str) -> bool {
 	name.starts_with("@")
@@ -39,7 +40,7 @@ fn group_json(req: HttpRequest) -> impl Responder {
 	actor.ap_actor_props.inbox = Uri::from_parts(uri_parts).unwrap().to_string().into();
 	actor.ap_actor_props.outbox = (uri_str.clone() + "/all").into();
 	actor.object_props.id = Some(Value::from(uri_str.to_owned()));
-	actor.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
+	actor.object_props.context = Some(Value::from(CONTEXT));
     serde_json::to_string(&actor)
 }
 
@@ -47,7 +48,7 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 	let uri = req.uri().to_string();
 	let mut inbox = collection::OrderedCollection::default();
 	inbox.object_props.id = Some(Value::from(uri.to_owned()));
-	inbox.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
+	inbox.object_props.context = Some(Value::from(CONTEXT));
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
@@ -69,7 +70,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 	let uri = req.uri().to_string();
 	let mut outbox = collection::OrderedCollection::default();
 	outbox.object_props.id = Some(Value::from(uri.to_owned()));
-	outbox.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
+	outbox.object_props.context = Some(Value::from(CONTEXT));
 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
@@ -150,7 +151,7 @@ fn user_json(req: HttpRequest) -> impl Responder {
 	actor.ap_actor_props.inbox = Uri::from_parts(uri_parts).unwrap().to_string().into();
 	actor.ap_actor_props.outbox = (uri_str.clone() + "/all").into();
 	actor.object_props.id = Some(Value::from(uri_str.to_owned()));
-	actor.object_props.context = Some(Value::from("https://www.w3.org/ns/activitystreams"));
+	actor.object_props.context = Some(Value::from(CONTEXT));
     serde_json::to_string(&actor)
 }
 
