@@ -4,7 +4,8 @@ use futures_locks::Mutex;
 use serde_json::Value;
 use std::error::Error;
 use actix::prelude::*;
-use tokio_postgres::{connect, NoTls, Statement, Client, Row, types::{Type, Kind, IsNull, ToSql}};
+use tokio_postgres::{connect, NoTls, Statement, Client, Row, row::RowIndex, types::{Type, Kind, IsNull, ToSql}};
+use std::fmt::Display;
 use futures::future;
 use chrono::{DateTime, Utc};
 
@@ -56,16 +57,18 @@ impl ToSql for ActorVariant {
 	}
 }
 
-pub fn into_value(row: &Row, name: &str, col_type: &Type) -> Value {
+pub fn into_value<I>(row: &Row, name: &I, col_type: &Type) -> Value
+	where I: RowIndex + Display
+{
 	macro_rules! from_sql {
 		($(($sql_type:ident, $type_to:ty)),*) => {
 			match col_type {
-				$(&Type::$sql_type => row.get::<&str, Option<$type_to>>(name).map_or(Value::Null, |v| v.into()),)*
+				$(&Type::$sql_type => row.get::<&I, Option<$type_to>>(name).map_or(Value::Null, |v| v.into()),)*
 				_ => panic!("Specified SQL cell's type is not compatible to JSON")
 			}
 		}
 	}
-	if col_type == &Type::TIMESTAMPTZ { format_timestamp_rfc3339_seconds_omitted(row.get::<&str, DateTime<Utc>>(name)).into() }
+	if col_type == &Type::TIMESTAMPTZ { format_timestamp_rfc3339_seconds_omitted(row.get::<&I, DateTime<Utc>>(name)).into() }
 	else {
 		from_sql![
 			(CHAR, i8),

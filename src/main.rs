@@ -56,7 +56,7 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
-					(String::from(name), db::into_value(&row, name, col.type_()))
+					(String::from(name), db::into_value(&row, &name, col.type_()))
 				})
 				.collect::<Map<String, Value>>())
 			.collect().and_then(move |items| {
@@ -78,7 +78,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 			.map(|row| row.columns().into_iter()
 				.map(|col| {
 					let name = col.name();
-					(String::from(name), db::into_value(&row, name, col.type_()))
+					(String::from(name), db::into_value(&row, &name, col.type_()))
 				})
 				.collect::<Map<String, Value>>())
 			.collect().and_then(move |items| {
