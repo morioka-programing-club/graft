@@ -21,7 +21,7 @@ extern crate lazy_static;
 
 const HOST: &str = "localhost:8088";
 const PROTOCOL_HOST: &str = "https://localhost:8088";
-const CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
+const CONTEXT: &str = "http://www.w3.org/ns/activitystreams";
 
 lazy_static! {
 	static ref ID: String = "id".to_string();
