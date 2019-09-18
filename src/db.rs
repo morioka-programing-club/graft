@@ -163,6 +163,17 @@ pub fn process_recievers(json: Value, id: i64, db: DbWrapper) -> Box<Future<Item
 	}
 }
 
+pub fn get_senders_and_recievers(client: &mut Client, statements: &Statements, id: i64) -> impl Future<Item = (Vec<Value>, Vec<Value>), Error = tokio_postgres::Error> {
+	client.query(&statements.get_senders, &[&id])
+		.map(|sender| into_value(&sender, &0, &Type::TEXT))
+		.collect()
+		.join(
+			client.query(&statements.get_recievers, &[&id])
+				.map(|reciever| into_value(&reciever, &0, &Type::TEXT))
+				.collect()
+		)
+}
+
 pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>> {
 	Box::new(
 		connect(&(String::from("postgres://") + user_name + "@localhost/graft"), NoTls)

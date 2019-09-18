@@ -8,7 +8,6 @@ use std::io::{stdin, stdout, Write};
 use actix::prelude::*;
 use chrono::Utc;
 use env_logger;
-use tokio_postgres::types::Type;
 
 mod db;
 use db::{DbWrapper, process_senders, process_recievers};
@@ -71,18 +70,11 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 				let (client, statements) = db_locked.get();
 				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
 
-				client.query(&statements.get_senders, &[&id])
-					.map(|sender| db::into_value(&sender, &0, &Type::TEXT))
-					.collect()
-					.join(
-						client.query(&statements.get_recievers, &[&id])
-							.map(|reciever| db::into_value(&reciever, &0, &Type::TEXT))
-							.collect()
-					).and_then(move |(senders, recievers)| {
-						items.insert("actor".to_string(), unwrap_short_vec(senders).into());
-						items.insert("to".to_string(), unwrap_short_vec(recievers).into());
-						Ok(items)
-					})
+				db::get_senders_and_recievers(client, statements, id).and_then(move |(senders, recievers)| {
+					items.insert("actor".to_string(), unwrap_short_vec(senders).into());
+					items.insert("to".to_string(), unwrap_short_vec(recievers).into());
+					Ok(items)
+				})
 			}).collect().and_then(move |items| {
 				inbox.collection_props.items = items.into();
 				serde_json::to_string(&inbox).map_err(|_| panic!("JSON serialization error"))
@@ -109,18 +101,11 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 				let (client, statements) = db_locked.get();
 				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
 
-				client.query(&statements.get_senders, &[&id])
-					.map(|sender| db::into_value(&sender, &0, &Type::TEXT))
-					.collect()
-					.join(
-						client.query(&statements.get_recievers, &[&id])
-							.map(|reciever| db::into_value(&reciever, &0, &Type::TEXT))
-							.collect()
-					).and_then(move |(senders, recievers)| {
-						items.insert("actor".to_string(), unwrap_short_vec(senders).into());
-						items.insert("to".to_string(), unwrap_short_vec(recievers).into());
-						Ok(items)
-					})
+				db::get_senders_and_recievers(client, statements, id).and_then(move |(senders, recievers)| {
+					items.insert("actor".to_string(), unwrap_short_vec(senders).into());
+					items.insert("to".to_string(), unwrap_short_vec(recievers).into());
+					Ok(items)
+				})
 			}).collect().and_then(move |items| {
 				outbox.collection_props.items = items.into();
 				serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
