@@ -2,7 +2,10 @@ use std::fmt::Display;
 use actix_web::dev::RequestHead;
 use chrono::{DateTime, TimeZone};
 use chrono::format::{Item, Numeric, Pad, Fixed};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use tokio_postgres::Row;
+
+use crate::db;
 
 pub fn is_activitypub_request(head: &RequestHead) -> bool {
 	match head.headers.get("Content-Type") {
@@ -47,4 +50,13 @@ pub fn unwrap_short_vec<T>(mut vec: Vec<T>) -> MaybeUnwrapped<T> {
 		1 => MaybeUnwrapped::Single(vec.remove(0)),
 		_ => MaybeUnwrapped::Multiple(vec)
 	}
+}
+
+pub fn message_to_json(row: Row) -> Map<String, Value> {
+	row.columns().into_iter()
+		.map(|col| {
+			let name = col.name();
+			(String::from(name), db::into_value(&row, &name, col.type_()))
+		})
+		.collect::<Map<String, Value>>()
 }

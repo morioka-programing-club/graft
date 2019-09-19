@@ -13,7 +13,7 @@ mod db;
 use db::{DbWrapper, process_senders, process_recievers};
 
 mod activitypub_util;
-use activitypub_util::{is_activitypub_request, unwrap_short_vec};
+use activitypub_util::{is_activitypub_request, unwrap_short_vec, message_to_json};
 
 #[macro_use]
 extern crate lazy_static;
@@ -60,12 +60,7 @@ fn inbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error = 
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
 		client.query(&statements.get_inbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))])
-			.map(|row| row.columns().into_iter()
-				.map(|col| {
-					let name = col.name();
-					(String::from(name), db::into_value(&row, &name, col.type_()))
-				})
-				.collect::<Map<String, Value>>())
+			.map(message_to_json)
 			.and_then(move |mut items| {
 				let (client, statements) = db_locked.get();
 				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
@@ -91,12 +86,7 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 	db.lock().from_err().and_then(move |mut db_locked| {
 		let (client, statements) = db_locked.get();
 		client.query(&statements.get_outbox, &[&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))])
-			.map(|row| row.columns().into_iter()
-				.map(|col| {
-					let name = col.name();
-					(String::from(name), db::into_value(&row, &name, col.type_()))
-				})
-				.collect::<Map<String, Value>>())
+			.map(message_to_json)
 			.and_then(move |mut items| {
 				let (client, statements) = db_locked.get();
 				let id = items.get_mut(&*ID).unwrap().as_i64().unwrap();
