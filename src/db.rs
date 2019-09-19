@@ -104,6 +104,7 @@ impl Db {
 pub struct Statements {
 	pub get_inbox: Statement,
 	pub get_outbox: Statement,
+	pub get_message: Statement,
 	pub get_senders: Statement,
 	pub get_recievers: Statement,
 	pub create_message: Statement,
@@ -184,6 +185,7 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 					// Insert SQL statements here
 					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_recieved WHERE actor = $1) ORDER BY ctime;"), // get inbox
 					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_sent WHERE actor = $1) ORDER BY ctime;"), // get outbox
+					cl.prepare("SELECT * FROM messages WHERE id = $1;"), // get message
 					cl.prepare("SELECT actor FROM messages_sent WHERE message = $1;"), // get senders
 					cl.prepare("SELECT actor FROM messages_recieved WHERE message = $1;"), // get recievers
 					cl.prepare("INSERT INTO messages (content, ctime, mtime) VALUES ($1, $2, $2) RETURNING id;"), // create message
@@ -199,6 +201,7 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 						statements: Statements {
 							get_inbox: iter.next().unwrap(),
 							get_outbox: iter.next().unwrap(),
+							get_message: iter.next().unwrap(),
 							get_senders: iter.next().unwrap(),
 							get_recievers: iter.next().unwrap(),
 							create_message: iter.next().unwrap(),

@@ -1,7 +1,7 @@
 use futures::future;
 use actix_web::{HttpServer, App, web, HttpRequest, Responder, error::{self, Error as ActixError}, middleware::Compress};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-use serde_json::{Value, Map};
+use serde_json::Value;
 use activitypub::{actor, collection};
 use actix_web::http::uri::{Uri, Parts, PathAndQuery};
 use std::io::{stdin, stdout, Write};
@@ -101,6 +101,39 @@ fn outbox(req: HttpRequest, db: DbWrapper) -> impl Future<Item = String, Error =
 				serde_json::to_string(&outbox).map_err(|_| panic!("JSON serialization error"))
 			}).map_err(error::ErrorInternalServerError)
 	})
+}
+
+fn single_post(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
+	let id = match i64::from_str_radix(req.match_info().query("id"), 10) {
+		Ok(id) => id,
+		Err(e) => return Box::new(future::err(error::ErrorBadRequest(e)))
+	};
+
+	Box::new(db.lock().from_err().and_then(move |mut db_locked| {
+		let (client, statements) = db_locked.get();
+		client.query(&statements.get_message, &[&id])
+			.map(message_to_json)
+			.collect()
+			.map_err(error::ErrorInternalServerError)
+			.and_then(|mut items| {
+				if items.len() == 0 {
+					Err(error::ErrorNotFound("No post found for the ID requested"))
+				} else {
+					Ok(items.remove(0))
+				}
+			}).and_then(move |mut items| {
+				let (client, statements) = db_locked.get();
+
+				db::get_senders_and_recievers(client, statements, id)
+					.map_err(error::ErrorInternalServerError).and_then(move |(senders, recievers)| {
+					items.insert("actor".to_string(), unwrap_short_vec(senders).into());
+					items.insert("to".to_string(), unwrap_short_vec(recievers).into());
+					Ok(items)
+				})
+			}).and_then(move |message| {
+				serde_json::to_string(&message).map_err(|_| panic!("JSON serialization error"))
+			})
+	}))
 }
 
 fn create(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
@@ -211,6 +244,8 @@ fn main() {
 							.route(web::get().to_async(outbox))
 							.route(web::post().guard(is_activitypub_request).to_async(post))
 						)
+				).service(web::resource("/post/{id}")
+					.route(web::get().to_async(single_post))
 				).service(web::resource("/to/{actorname}")
 					.route(web::get().to_async(inbox))
 					.route(web::post().to_async(inbox))
