@@ -219,6 +219,12 @@ fn main() {
 
 	let future = db::init(&user_name[0..len-1]).and_then(|db| {
 		HttpServer::new(move || {
+			/*
+			 * About actix-web
+			 * scopes concat before resource URL
+			 * use {<name>[:regex]} syntax to match into various strings
+			 */
+
 			App::new()
 				.wrap(Compress::default())
 				.register_data(db.clone())
