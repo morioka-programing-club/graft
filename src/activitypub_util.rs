@@ -60,3 +60,28 @@ pub fn message_to_json(row: Row) -> Map<String, Value> {
 		})
 		.collect::<Map<String, Value>>()
 }
+
+#[cfg(test)]
+mod tests {
+	use super::{format_timestamp_rfc3339_seconds_omitted, unwrap_short_vec, MaybeUnwrapped};
+	use chrono::{Utc, TimeZone};
+
+    #[test]
+    fn timestamp_formatting() {
+		let time = Utc.ymd(2019, 9, 20).and_hms(11, 5, 34);
+        assert_eq!(format_timestamp_rfc3339_seconds_omitted(time), "2019-09-20T11:05Z");
+    }
+
+	#[test]
+    fn short_vec() {
+		match unwrap_short_vec(vec![14]) {
+			MaybeUnwrapped::Single(value) => assert_eq!(value, 14),
+			_ => panic!("The Vec have single value on it and this code should not be reachable")
+		}
+		match unwrap_short_vec(vec![13, 21]) {
+			MaybeUnwrapped::Multiple(value) => assert_eq!(value, vec![13, 21]),
+			_ => panic!("The Vec have multiple values on it and this code should not be reachable")
+		}
+		assert!(if let MaybeUnwrapped::None = unwrap_short_vec::<i32>(vec![]) {true} else {false});
+    }
+}
