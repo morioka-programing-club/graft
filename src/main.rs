@@ -10,7 +10,7 @@ use chrono::Utc;
 use env_logger;
 
 mod db;
-use db::{DbWrapper, process_senders, process_recievers};
+use db::{DbWrapper, process_senders, process_recievers, expect_single};
 
 mod activitypub_util;
 use activitypub_util::{is_activitypub_request, unwrap_short_vec, message_to_json};
@@ -115,13 +115,7 @@ fn single_post(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Err
 			.map(message_to_json)
 			.collect()
 			.map_err(error::ErrorInternalServerError)
-			.and_then(|mut items| {
-				if items.len() == 0 {
-					Err(error::ErrorNotFound("No post found for the ID requested"))
-				} else {
-					Ok(items.remove(0))
-				}
-			}).and_then(move |mut items| {
+			.and_then(expect_single("No post found for the ID requested", "Internal error")).and_then(move |mut items| {
 				let (client, statements) = db_locked.get();
 
 				db::get_senders_and_recievers(client, statements, id)

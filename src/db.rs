@@ -9,7 +9,7 @@ use std::fmt::Display;
 use futures::future;
 use chrono::{DateTime, Utc};
 
-use crate::activitypub_util::format_timestamp_rfc3339_seconds_omitted;
+use crate::activitypub_util::{unwrap_short_vec, MaybeUnwrapped, format_timestamp_rfc3339_seconds_omitted};
 
 #[derive(Debug)]
 pub enum ActorVariant {
@@ -84,6 +84,16 @@ pub fn into_value<I>(row: &Row, name: &I, col_type: &Type) -> Value
 			(TEXT_ARRAY, Vec<&str>)
 		]
 	}
+}
+
+pub fn expect_single<T>(err_none: &'static str, err_multi: &'static str) -> Box<Fn(Vec<T>) -> Result<T, ActixError>> {
+	Box::new(move |result| {
+		match unwrap_short_vec(result) {
+			MaybeUnwrapped::Single(value) => Ok(value),
+			MaybeUnwrapped::None => Err(error::ErrorNotFound(err_none)),
+			MaybeUnwrapped::Multiple(_) => Err(error::ErrorInternalServerError(err_multi))
+		}
+	})
 }
 
 pub struct Db {
