@@ -6,7 +6,7 @@ use activitypub::{actor, collection};
 use actix_web::http::uri::{Uri, Parts, PathAndQuery};
 use std::io::{stdin, stdout, Write};
 use actix::prelude::*;
-use chrono::Utc;
+use chrono::{Utc, DateTime};
 use env_logger;
 
 mod db;
@@ -158,7 +158,7 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 		"Create" => {
 			Box::new(db.lock().from_err().join(future::ok(json)).and_then(|(mut db_locked, json)| {
 				let (client, statements) = db_locked.get();
-				client.query(&statements.create_message, &[&json["object"]["content"].as_str(), &Utc::now()])
+				client.query(&statements.create_message, &[&json["object"]["content"].as_str(), &Utc::now(), &None::<i64>])
 					.map_err(error::ErrorInternalServerError)
 					.collect().join(future::ok(json))
 					.and_then(move |(id, mut json)| {
@@ -166,6 +166,46 @@ fn post(json: web::Json<Value>, db: DbWrapper) -> Box<Future<Item = String, Erro
 							.join(process_recievers(json["to"].take(), id[0].get(0), db.clone()))
 					})
 					.map(|_| "".to_string())
+			}))
+		},
+		"Update" => {
+			Box::new(db.lock().from_err().join(future::ok(json)).and_then(|(mut db_locked, json)| {
+				let (client, statements) = db_locked.get();
+				client.query(&statements.get_message, &[&json["object"]["id"].as_i64()])
+					.collect()
+					.map_err(error::ErrorInternalServerError)
+					.and_then(expect_single("No post found for the ID requested", "Internal error"))
+					.and_then(move |message| {
+						let id = message.get::<&str, i64>("id");
+						let logid_original = message.get::<&str, Option<i64>>("changelog");
+						let fut: Box<Future<Item = i64, Error = ActixError>> = if let None = logid_original {
+							let (client, statements) = db_locked.get();
+							Box::new(client.query(&statements.version_message, &[&id])
+								.collect()
+								.map_err(error::ErrorInternalServerError)
+								.and_then(expect_single("Internal error", "Internal error"))
+								.and_then(|row| Ok(row.get::<usize, i64>(0))))
+						} else {
+							Box::new(future::ok(logid_original.unwrap()))
+						};
+						fut.and_then(move |logid| {
+							let (client, statements) = db_locked.get();
+							client.query(&statements.create_message, &[
+								&message.get::<&str, &str>("content"), &message.get::<&str, DateTime<Utc>>("time"), &logid
+							]).collect().map_err(error::ErrorInternalServerError)
+							.and_then(expect_single("Internal error", "Internal error"))
+							.and_then(move |old| {
+								let (client, statements) = db_locked.get();
+								client.query(&statements.add_message_version, &[&logid, &old.get::<&str, i64>("id")])
+									.collect().map_err(error::ErrorInternalServerError)
+									.and_then(move |_| {
+										let (client, statements) = db_locked.get();
+										client.query(&statements.update_message, &[&id, &json["object"]["content"].as_str(), &Utc::now(), &logid])
+											.collect().map_err(error::ErrorInternalServerError)
+									})
+							})
+						})
+					}).map(|_| "".to_string())
 			}))
 		},
 		_ => Box::new(future::err(error::ErrorBadRequest("Unknown object type")))
@@ -202,7 +242,12 @@ fn main() {
 
     // load ssl keys
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-    builder.set_private_key_file("key.pem", SslFiletype::PEM).unwrap();
+	loop {
+    	match builder.set_private_key_file("key.pem", SslFiletype::PEM) {
+			Ok(_) => break,
+			Err(_) => eprintln!("An error happened while verifying certification. If it was a typo in the passphrase, try again.")
+		}
+	}
     builder.set_certificate_chain_file("cert.pem").unwrap();
 
 	print!("Input PostgreSQL user name: ");
@@ -211,7 +256,7 @@ fn main() {
     stdin().read_line(&mut user_name).expect("Failed to read line");
 	let len = user_name.len();
 
-	let future = db::init(&user_name[0..len-1]).and_then(|db| {
+	let future = db::init(&user_name[0..len-1], "graft").and_then(|db| {
 		HttpServer::new(move || {
 			/*
 			 * About actix-web

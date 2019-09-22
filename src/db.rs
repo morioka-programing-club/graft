@@ -118,6 +118,9 @@ pub struct Statements {
 	pub get_senders: Statement,
 	pub get_recievers: Statement,
 	pub create_message: Statement,
+	pub version_message: Statement,
+	pub update_message: Statement,
+	pub add_message_version: Statement,
 	pub add_sender: Statement,
 	pub add_reciever: Statement,
 	pub create_actor: Statement,
@@ -193,12 +196,15 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 				Arbiter::spawn(conn.map_err(|e| panic!("{}", e)));
 				future::join_all(vec![
 					// Insert SQL statements here
-					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_recieved WHERE actor = $1) ORDER BY ctime;"), // get inbox
-					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_sent WHERE actor = $1) ORDER BY ctime;"), // get outbox
+					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_recieved WHERE actor = $1) ORDER BY time;"), // get inbox
+					cl.prepare("SELECT * FROM messages WHERE id IN (SELECT message FROM messages_sent WHERE actor = $1) ORDER BY time;"), // get outbox
 					cl.prepare("SELECT * FROM messages WHERE id = $1;"), // get message
 					cl.prepare("SELECT actor FROM messages_sent WHERE message = $1;"), // get senders
 					cl.prepare("SELECT actor FROM messages_recieved WHERE message = $1;"), // get recievers
-					cl.prepare("INSERT INTO messages (content, ctime, mtime) VALUES ($1, $2, $2) RETURNING id;"), // create message
+					cl.prepare("INSERT INTO messages (content, time, changelog) VALUES ($1, $2, $3) RETURNING id;"), // create message
+					cl.prepare("INSERT INTO messages_changes (version) VALUES ($1) RETURNING id;"), // version message
+					cl.prepare("UPDATE messages SET (content, time, changelog) = ($2, $3, $4) WHERE id = $1 RETURNING id;"), // update message
+					cl.prepare("INSERT INTO messages_changes (id, version) VALUES ($1, $2);"), // add message version
 					cl.prepare("INSERT INTO messages_sent (actor, message) VALUES ($2, $1);"), // add sender
 					cl.prepare("INSERT INTO messages_recieved (actor, message) VALUES ($2, $1);"), // add reciever
 					cl.prepare("INSERT INTO actors (actortype, id) VALUES ($1, $2);"), // create actor
@@ -215,6 +221,9 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 							get_senders: iter.next().unwrap(),
 							get_recievers: iter.next().unwrap(),
 							create_message: iter.next().unwrap(),
+							version_message: iter.next().unwrap(),
+							update_message: iter.next().unwrap(),
+							add_message_version: iter.next().unwrap(),
 							add_sender: iter.next().unwrap(),
 							add_reciever: iter.next().unwrap(),
 							create_actor: iter.next().unwrap(),
