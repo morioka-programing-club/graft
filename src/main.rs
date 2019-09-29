@@ -130,6 +130,24 @@ fn single_post(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Err
 	}))
 }
 
+fn changelog(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
+	let id = match i64::from_str_radix(req.match_info().query("id"), 10) {
+		Ok(id) => id,
+		Err(e) => return Box::new(future::err(error::ErrorBadRequest(e)))
+	};
+
+	Box::new(db.lock().from_err().and_then(move |mut db_locked| {
+		let (client, statements) = db_locked.get();
+		client.query(&statements.get_changelog, &[&id])
+			.map(|row| row.get::<usize, i64>(0).into())
+			.collect()
+			.map_err(error::ErrorInternalServerError)
+			.and_then(move |history| {
+				serde_json::to_string(&Value::Array(history)).map_err(|_| panic!("JSON serialization error"))
+			})
+	}))
+}
+
 fn create(req: HttpRequest, db: DbWrapper) -> Box<Future<Item = String, Error = ActixError>> {
 	Box::new(db.lock().from_err().and_then(move |mut db_locked| {
 		let mut name = req.match_info().query("actorname").to_owned();
@@ -291,6 +309,8 @@ fn main() {
 						)
 				).service(web::resource("/post/{id}")
 					.route(web::get().to_async(single_post))
+				).service(web::resource("/log/{id}")
+					.route(web::get().to_async(changelog))
 				).service(web::resource("/to/{actorname}")
 					.route(web::get().to_async(inbox))
 					.route(web::post().to_async(inbox))

@@ -111,12 +111,14 @@ impl Db {
 	}
 }
 
+// TODO: statement declarations are repeated 3 times, macro is preferred
 pub struct Statements {
 	pub get_inbox: Statement,
 	pub get_outbox: Statement,
 	pub get_message: Statement,
 	pub get_senders: Statement,
 	pub get_recievers: Statement,
+	pub get_changelog: Statement,
 	pub create_message: Statement,
 	pub version_message: Statement,
 	pub update_message: Statement,
@@ -201,6 +203,7 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 					cl.prepare("SELECT * FROM messages WHERE id = $1;"), // get message
 					cl.prepare("SELECT actor FROM messages_sent WHERE message = $1;"), // get senders
 					cl.prepare("SELECT actor FROM messages_recieved WHERE message = $1;"), // get recievers
+					cl.prepare("SELECT version FROM messages_changes WHERE id = $1;"), // get changelog
 					cl.prepare("INSERT INTO messages (content, time, changelog) VALUES ($1, $2, $3) RETURNING id;"), // create message
 					cl.prepare("INSERT INTO messages_changes (version) VALUES ($1) RETURNING id;"), // version message
 					cl.prepare("UPDATE messages SET (content, time, changelog) = ($2, $3, $4) WHERE id = $1 RETURNING id;"), // update message
@@ -220,6 +223,7 @@ pub fn init(user_name: &str) -> Box<Future<Item = DbWrapper, Error = io::Error>>
 							get_message: iter.next().unwrap(),
 							get_senders: iter.next().unwrap(),
 							get_recievers: iter.next().unwrap(),
+							get_changelog: iter.next().unwrap(),
 							create_message: iter.next().unwrap(),
 							version_message: iter.next().unwrap(),
 							update_message: iter.next().unwrap(),
