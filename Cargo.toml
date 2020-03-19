@@ -5,14 +5,19 @@ authors = ["axion014 <axion014@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-actix = "0.8.3"
-actix-web = { version = "1.0.5", features = ["ssl"] }
+bytes = "0.5"
+futures = "0.3.4"
+futures-locks = { git="https://github.com/asomers/futures-locks.git" }
+async-recursion = "0.1"
+actix-rt = "1.0"
+actix-web = { version = "2.0", features = ["openssl"] }
 openssl = { version = "0.10", features = ["v110"] }
+deadpool-postgres = { version = "0.5", features = ["config"] }
+dotenv = "0.15"
+config = "0.10"
 serde_json = "1.0"
 activitypub = "0.1"
-tokio-postgres = { git="https://github.com/sfackler/rust-postgres.git", features = ["with-chrono-0_4"] }
-futures = "0.1"
-futures-locks = "0.4"
+tokio-postgres = { version = "0.5", features = ["with-chrono-0_4"] }
 chrono = "0.4"
 env_logger = "0.6"
 lazy_static = "1.4"
