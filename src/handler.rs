@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::db::{self, process_senders, process_recievers, expect_single};
 use crate::activitypub_util::{unwrap_short_vec, message_to_json};
-use crate::util::is_username;
+use crate::util::{is_username, CachedDB};
 use crate::db::statements::*;
 
 const PROTOCOL_HOST: &str = "https://localhost:8088";
@@ -46,7 +46,7 @@ pub async fn inbox(req: HttpRequest) -> Result<String, ActixError> {
 	inbox.object_props.context = Some(Value::from(CONTEXT));
 
 	let mut db = db::get().map_err(error::ErrorInternalServerError).await?;
-	let mut items: Vec<Map<String, Value>> = db.query(get_inbox, &[
+	let mut items: Vec<Map<String, Value>> = db.cquery(get_inbox, &[
 		&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))
 	]).map_ok(|rows| rows.into_iter().map(message_to_json).collect())
 		.map_err(error::ErrorInternalServerError).await?;
@@ -68,7 +68,7 @@ pub async fn outbox(req: HttpRequest) -> Result<String, ActixError> {
 	outbox.object_props.context = Some(Value::from(CONTEXT));
 
 	let mut db = db::get().map_err(error::ErrorInternalServerError).await?;
-	let mut items: Vec<Map<String, Value>> = db.query(get_outbox, &[
+	let mut items: Vec<Map<String, Value>> = db.cquery(get_outbox, &[
 		&(PROTOCOL_HOST.to_owned() + "/of/" + req.match_info().query("actorname"))
 	]).map_ok(|rows| rows.into_iter().map(message_to_json).collect())
 		.map_err(error::ErrorInternalServerError).await?;
@@ -91,7 +91,7 @@ pub async fn view_post(req: HttpRequest) -> Result<String, ActixError> {
 
 	let mut db = db::get().map_err(error::ErrorInternalServerError).await?;
 	let mut items = expect_single("No post found for the ID requested", "Internal error")(
-		db.query(get_post, &[&id])
+		db.cquery(get_post, &[&id])
 		.map_ok(|rows| rows.into_iter().map(message_to_json).collect())
 		.map_err(error::ErrorInternalServerError).await?)?;
 	let (senders, recievers) = db::get_senders_and_recievers(&mut db, id)
@@ -108,7 +108,7 @@ pub async fn changelog(req: HttpRequest) -> Result<String, ActixError> {
 	};
 
 	let db = db::get().map_err(error::ErrorInternalServerError).await?;
-	let history = db.query(get_changelog, &[&id])
+	let history = db.cquery(get_changelog, &[&id])
 		.map_ok(|rows| rows.into_iter().map(|row| row.get::<usize, i64>(0).into()).collect())
 		.map_err(error::ErrorInternalServerError).await?;
 	Ok(serde_json::to_string(&Value::Array(history)).map_err(|_| panic!("JSON serialization error"))?)
@@ -120,7 +120,7 @@ pub async fn create(req: HttpRequest) -> Result<String, ActixError> {
 	if isuser {name.remove(0);}
 
 	let db = db::get().map_err(error::ErrorInternalServerError).await?;
-	db.execute(create_actor, &[
+	db.cexecute(create_actor, &[
 		&if isuser {db::ActorVariant::User} else {db::ActorVariant::Group},
 		&req.uri().to_string()
 	]).map_err(error::ErrorInternalServerError).await?;
@@ -135,7 +135,7 @@ pub async fn submit(mut json: web::Json<Value>) -> Result<String, ActixError> {
 	let db = db::get().map_err(error::ErrorInternalServerError).await?;
 	match json["type"].as_str().unwrap() {
 		"Create" => {
-			let id = db.query(create_message, &[
+			let id = db.cquery(create_message, &[
 				&json["object"]["content"].as_str(), &Utc::now(), &None::<i64>
 			]).map_err(error::ErrorInternalServerError).await?[0].get(0);
 			let db = Arc::new(db);
@@ -145,25 +145,25 @@ pub async fn submit(mut json: web::Json<Value>) -> Result<String, ActixError> {
 		},
 		"Update" => {
 			let message = expect_single("No post found for the ID requested", "Internal error")(
-				db.query(get_post, &[&json["object"]["id"].as_i64()])
+				db.cquery(get_post, &[&json["object"]["id"].as_i64()])
 					.map_err(error::ErrorInternalServerError).await?)?;
 			let id = message.get::<&str, i64>("id");
 			let logid_original = message.get::<&str, Option<i64>>("changelog");
 			let logid = if let None = logid_original {
 				expect_single("Internal error", "Internal error")(
-					db.query(version_message, &[&id]).map_err(error::ErrorInternalServerError).await?
+					db.cquery(version_message, &[&id]).map_err(error::ErrorInternalServerError).await?
 				)?.get::<usize, i64>(0)
 			} else {
 				logid_original.unwrap()
 			};
 			let old = expect_single("Internal error", "Internal error")(
-				db.query(create_message, &[
+				db.cquery(create_message, &[
 					&message.get::<&str, &str>("content"), &message.get::<&str, DateTime<Utc>>("time"), &logid
 				]).map_err(error::ErrorInternalServerError).await?)?;
 
-			db.query(add_message_version, &[&logid, &old.get::<&str, i64>("id")])
+			db.cquery(add_message_version, &[&logid, &old.get::<&str, i64>("id")])
 				.map_err(error::ErrorInternalServerError).await?;
-			db.query(update_message, &[&id, &json["object"]["content"].as_str(), &Utc::now(), &logid])
+			db.cquery(update_message, &[&id, &json["object"]["content"].as_str(), &Utc::now(), &logid])
 				.map_err(error::ErrorInternalServerError).await?;
 			Ok("".to_string())
 		},

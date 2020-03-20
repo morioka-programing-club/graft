@@ -32,6 +32,7 @@ pub mod statements {
 
 use crate::activitypub_util::{unwrap_short_vec, MaybeUnwrapped, format_timestamp_rfc3339_seconds_omitted};
 use self::statements::*;
+use crate::util::CachedDB;
 
 lazy_static! {
 	pub static ref pool: Pool = ::config::Config::new().merge(Environment::new()).unwrap().clone()
@@ -125,12 +126,12 @@ pub fn expect_single<T>(err_none: &'static str, err_multi: &'static str) -> Box<
 pub async fn process_senders(json: Value, id: i64, db: Arc<Client>) -> Result<(), ActixError> {
 	match json {
 		Value::String(str) => {
-			db.execute(add_sender, &[&id, &str])
+			db.cexecute(add_sender, &[&id, &str])
 				.map_ok(|_| ())
 				.map_err(error::ErrorInternalServerError).await
 		},
 		Value::Object(obj) => {
-			db.execute(add_sender, &[&id, &obj["id"].as_str()])
+			db.cexecute(add_sender, &[&id, &obj["id"].as_str()])
 				.map_ok(|_| ())
 				.map_err(error::ErrorInternalServerError).await
 		},
@@ -144,12 +145,12 @@ pub async fn process_senders(json: Value, id: i64, db: Arc<Client>) -> Result<()
 pub async fn process_recievers(json: Value, id: i64, db: Arc<Client>) -> Result<(), ActixError> {
 	match json {
 		Value::String(str) => {
-			db.execute(add_reciever, &[&id, &str])
+			db.cexecute(add_reciever, &[&id, &str])
 				.map_ok(|_| ())
 				.map_err(error::ErrorInternalServerError).await
 		},
 		Value::Object(obj) => {
-			db.execute(add_reciever, &[&id, &obj["id"].as_str()])
+			db.cexecute(add_reciever, &[&id, &obj["id"].as_str()])
 				.map_ok(|_| ())
 				.map_err(error::ErrorInternalServerError).await
 		},
@@ -161,9 +162,9 @@ pub async fn process_recievers(json: Value, id: i64, db: Arc<Client>) -> Result<
 
 pub async fn get_senders_and_recievers(db: &mut Client, id: i64) -> Result<(Vec<Value>, Vec<Value>), tokio_postgres::Error> {
 	future::try_join(
-		db.query(get_senders, &[&id])
+		db.cquery(get_senders, &[&id])
 			.map_ok(|senders| senders.into_iter().map(|sender| into_value(&sender, &0, &Type::TEXT)).collect()),
-		db.query(get_recievers, &[&id])
+		db.cquery(get_recievers, &[&id])
 			.map_ok(|recievers| recievers.into_iter().map(|reciever| into_value(&reciever, &0, &Type::TEXT)).collect())
 	).await
 }

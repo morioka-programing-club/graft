@@ -9,6 +9,7 @@ bytes = "0.5"
 futures = "0.3.4"
 futures-locks = { git="https://github.com/asomers/futures-locks.git" }
 async-recursion = "0.1"
+async-trait = "0.1"
 actix-rt = "1.0"
 actix-web = { version = "2.0", features = ["openssl"] }
 openssl = { version = "0.10", features = ["v110"] }
