@@ -7,12 +7,20 @@ use tokio_postgres::Row;
 
 use crate::db;
 
-pub fn is_activitypub_request(head: &RequestHead) -> bool {
-	match head.headers.get("Content-Type") {
+fn is_activitypub_header(head: &RequestHead, key: &str) -> bool {
+	match head.headers.get(key) {
 		Some(v) => v == "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
 			|| v == "application/activity+json",
 		None => false
 	}
+}
+
+pub fn is_activitypub_post(head: &RequestHead) -> bool {
+	is_activitypub_header(head, "Content-Type")
+}
+
+pub fn is_activitypub_request(head: &RequestHead) -> bool {
+	is_activitypub_header(head, "Accept")
 }
 
 // copied from https://docs.rs/chrono/0.4.7/src/chrono/format/mod.rs.html#260-263

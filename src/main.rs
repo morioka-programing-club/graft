@@ -6,9 +6,9 @@ use dotenv;
 mod db;
 mod handler;
 mod util;
-
 mod activitypub_util;
-use activitypub_util::is_activitypub_request;
+
+use activitypub_util::{is_activitypub_request, is_activitypub_post};
 
 #[macro_use]
 extern crate lazy_static;
@@ -43,7 +43,7 @@ async fn main() {
 				.route("", post().to(handler::create))
 				.service(resource("/all")
 					.route(get().guard(is_activitypub_request).to(handler::outbox))
-					.route(post().guard(is_activitypub_request).to(handler::submit))
+					.route(post().guard(is_activitypub_post).to(handler::submit))
 				)
 			).service(resource("/of/{actorname:[^/@][^/]*}")
 				.route(get().guard(guard::Not(is_activitypub_request)).to(handler::group))
