@@ -133,7 +133,7 @@ pub async fn submit(mut json: web::Json<Value>) -> Result<String, ActixError> {
 	}
 
 	let db = db::get().map_err(error::ErrorInternalServerError).await?;
-	match json["type"].as_str().unwrap() {
+	match json["type"].as_str().unwrap() { // okay unwrap here, checked above
 		"Create" => {
 			let id = db.cquery(create_message, &[
 				&json["object"]["content"].as_str(), &Utc::now(), &None::<i64>
@@ -147,14 +147,13 @@ pub async fn submit(mut json: web::Json<Value>) -> Result<String, ActixError> {
 			let message = expect_single("No post found for the ID requested", "Internal error")(
 				db.cquery(get_post, &[&json["object"]["id"].as_i64()])
 					.map_err(error::ErrorInternalServerError).await?)?;
+
 			let id = message.get::<&str, i64>("id");
-			let logid_original = message.get::<&str, Option<i64>>("changelog");
-			let logid = if let None = logid_original {
-				expect_single("Internal error", "Internal error")(
+			let logid = match message.get::<&str, Option<i64>>("changelog") {
+				Some(logid) => logid,
+				None => expect_single("Internal error", "Internal error")(
 					db.cquery(version_message, &[&id]).map_err(error::ErrorInternalServerError).await?
 				)?.get::<usize, i64>(0)
-			} else {
-				logid_original.unwrap()
 			};
 			let old = expect_single("Internal error", "Internal error")(
 				db.cquery(create_message, &[
