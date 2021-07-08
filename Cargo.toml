@@ -29,3 +29,6 @@ mime = "0.3"
 url = { version = "2.2", features = ["serde"] }
 json-ld-rs = { path = "../json-ld-rs" }
 json-trait = { git = "https://github.com/axion014/json-trait", features = ["impl_serde_json"] }
+
+[dev-dependencies]
+cc-traits = { git = "https://github.com/axion014/cc-traits", branch = "serde-json-map"}

@@ -67,3 +67,24 @@ pub async fn compact_object(object: Map<String, Value>, mut context: Vec<Value>,
 	}
 	Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+	use json_trait::{BuildableJson, json};
+    use actix_web::test::TestRequest;
+
+    #[test]
+    fn test_context() {
+        let req = TestRequest::get()
+			.append_header(("accept", r#"application/ld+json; profile="https://www.w3.org/ns/activitystreams""#))
+			.to_http_request();
+        assert_eq!(context(&json!(Value, {}), req.head()).unwrap(), vec![json!(Value, ns!(as))]);
+		assert_eq!(context(&json!(Value, { "@context": ns!(as) }), req.head()).unwrap(), vec![json!(Value, ns!(as))]);
+		assert_eq!(context(&json!(Value, { "@context": [ ns!(as) ] }), req.head()).unwrap(), vec![json!(Value, ns!(as))]);
+		assert_eq!(
+			context(&json!(Value, { "@context": "https://example.org/ns/" }), req.head()).unwrap(),
+			vec![json!(Value, ns!(as)), json!(Value, "https://example.org/ns/")]
+		);
+    }
+}
