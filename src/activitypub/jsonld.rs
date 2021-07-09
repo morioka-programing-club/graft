@@ -40,15 +40,15 @@ pub fn context(object: &Map<String, Value>, head: &RequestHead) -> Result<Vec<Va
 	Ok(ctx)
 }
 
-pub async fn expand_object(object: Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
-	if let Value::Object(object) = expand(&JsonLdInput::<Value>::JsonObject(object), options).await?.remove(0) {
+pub async fn expand_object(object: &Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
+	if let Value::Object(object) = expand(JsonLdInput::<Value>::JsonObject(object), options).await?.remove(0) {
 		Ok(object)
 	} else {
 		panic!()
 	}
 }
 
-pub async fn compact_object(object: Map<String, Value>, mut context: Vec<Value>, options: &JsonLdOptions<'_, Value>) ->
+pub async fn compact_object(object: &Map<String, Value>, mut context: Vec<Value>, options: &JsonLdOptions<'_, Value>) ->
 	Result<Map<String, Value>, JsonLdError>
 {
 	let mut ctx_index = None;
@@ -60,7 +60,7 @@ pub async fn compact_object(object: Map<String, Value>, mut context: Vec<Value>,
 			}
 		}
 	}
-	let mut result = compact(&JsonLdInput::<Value>::JsonObject(object), Some(Cow::Owned(Value::Array(context))), options)
+	let mut result = compact(JsonLdInput::<Value>::JsonObject(object), Some(Cow::Owned(Value::Array(context))), options)
 		.await?;
 	if let Some(i) = ctx_index {
 		result["@context"][i].as_object_mut().unwrap().remove("@base");

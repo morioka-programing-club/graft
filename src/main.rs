@@ -96,7 +96,7 @@ async fn main() {
 				.name("inbox")
 				.route(get().guard(guard::Not(is_activitypub_request)).to(web::mentions))
 				.route(get().guard(is_activitypub_request).to(activitypub::inbox))
-				.route(post().guard(is_activitypub_request).to(activitypub::delivery))
+				//.route(post().guard(is_activitypub_request).to(activitypub::delivery))
 			)
 	});
 

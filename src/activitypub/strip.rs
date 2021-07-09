@@ -6,12 +6,12 @@ use super::{CONTEXT, GRAFT_CONTEXT};
 use super::jsonld::*;
 use crate::util::get_oid;
 
-pub async fn unstrip_object(object: Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
+pub async fn unstrip_object(object: &Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
 	expand_object(object, options).await
 }
 
-pub async fn unstrip_actor(mut object: Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
-	object = unstrip_object(object, options).await?;
+pub async fn unstrip_actor(object: &Map<String, Value>, options: &JsonLdOptions<'_, Value>) -> Result<Map<String, Value>, JsonLdError> {
+	let mut object = unstrip_object(object, options).await?;
 	if let Some(oid) = get_oid(object.get("@id").and_then(|id| id.as_str()).expect("Objects must have an id")).map(|oid| oid.to_string()) {
 		if !object.contains_key("inbox") { object.insert("inbox".to_string(), ("../for/".to_string() + &oid).into()); }
 		if !object.contains_key("outbox") { object.insert("outbox".to_string(), ("../by/".to_string() + &oid).into()); }
@@ -19,11 +19,11 @@ pub async fn unstrip_actor(mut object: Map<String, Value>, options: &JsonLdOptio
 	Ok(object)
 }
 
-pub async fn strip_object(mut object: Map<String, Value>, mut context: Vec<Value>, options: &JsonLdOptions<'_, Value>) ->
+pub async fn strip_object(object: &Map<String, Value>, mut context: Vec<Value>, options: &JsonLdOptions<'_, Value>) ->
 	Result<Map<String, Value>, JsonLdError>
 {
 	prepend_graft_context(&mut context);
-	object = compact_object(object, context, options).await?;
+	let mut object = compact_object(object, context, options).await?;
 	match object.remove("@context") {
 		Some(Value::String(ctx)) if ctx == ns!(as) => {},
 		Some(Value::Array(ctx)) => {

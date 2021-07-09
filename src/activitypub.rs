@@ -5,6 +5,7 @@ use actix_web::error::{Error, ErrorBadRequest, ErrorMethodNotAllowed};
 use chrono::{DateTime, Utc, SecondsFormat};
 use mime::Mime;
 use serde_json::{Map, Value, json};
+use json_trait::ForeignMutableJson;
 
 use crate::util::{ObjectId, Url};
 use crate::error::internal_error;
@@ -57,7 +58,13 @@ lazy_static::lazy_static! {
 enum SupportedActivity {
 	#[serde(rename = "https://www.w3.org/ns/activitystreams#Create")] Create,
 	#[serde(rename = "https://www.w3.org/ns/activitystreams#Update")] Update,
-	#[serde(rename = "https://www.w3.org/ns/activitystreams#Delete")] Delete
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Delete")] Delete,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Follow")] Follow,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Add")] Add,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Remove")] Remove,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Like")] Like,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Block")] Block,
+	#[serde(rename = "https://www.w3.org/ns/activitystreams#Undo")] Undo
 }
 
 fn get_id(object: &Map<String, Value>) -> Result<ObjectId, Error> {
@@ -65,6 +72,33 @@ fn get_id(object: &Map<String, Value>) -> Result<ObjectId, Error> {
 		.as_str().expect("valid JSON-LD")
    		.parse::<Url>().map_err(internal_error)?
 		.try_into().map_err(ErrorBadRequest)
+}
+
+fn is_collection(object: &Map<String, Value>) -> Result<bool, Error> {
+	Ok(object.get("@type").ok_or(ErrorBadRequest("missing `type`"))?.as_array().expect("expanded object")
+		.iter().any(|ty| match ty.as_str() {
+			Some("Collection" | "OrderedCollection") => true,
+			_ => false
+		})
+	)
+}
+
+fn get_objects<'a>(object: &'a Map<String, Value>, prop: &str) -> Option<impl Iterator<Item = &'a Map<String, Value>>> {
+	object.get(prop).map(|array| array
+		.as_array().expect("expanded object")
+		.iter().map(|inner| inner.as_object().expect("expanded object")))
+}
+
+fn get_objects_mut<'a>(object: &'a mut Map<String, Value>, prop: &str) -> Option<impl Iterator<Item = &'a mut Map<String, Value>>> {
+	object.get_mut(prop).map(|array| array
+		.as_array_mut().expect("expanded object")
+		.iter_mut().map(|inner| inner.as_object_mut().expect("expanded object")))
+}
+
+fn take_objects(object: &mut Map<String, Value>, prop: &str) -> Option<impl Iterator<Item = Map<String, Value>>> {
+	object.remove(prop).map(|array| array
+		.into_array().expect("expanded object")
+		.into_iter().map(|inner| inner.into_object().expect("expanded object")))
 }
 
 fn copy_recipients(from: &Map<String, Value>, to: &mut Map<String, Value>) {
