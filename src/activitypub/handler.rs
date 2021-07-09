@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use mongodb::Client;
 use actix_web::{web::{Data, Json, Path}, HttpRequest, Responder, http::StatusCode};
-use actix_web::error::{Error as ActixError, ErrorBadRequest};
+use actix_web::error::{Error as ActixError, ErrorBadRequest, ErrorNotFound};
 use chrono::Utc;
 use serde_json::{Map, Value};
 use serde::de::{Deserialize, IntoDeserializer, value::StrDeserializer};
@@ -17,7 +17,7 @@ use super::jsonld::*;
 use super::strip::*;
 
 pub async fn account(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
-	let mut account = get(&id, &db).await?;
+	let mut account = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&account, req.head())?;
 	account = unstrip_actor(&account, &options).await.map_err(internal_error)?;
@@ -47,7 +47,7 @@ pub async fn outbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<
 }
 
 pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
-	let mut post = get(&id, &db).await?;
+	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
@@ -55,7 +55,7 @@ pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<St
 }
 
 pub async fn activity(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
-	let mut post = get(&id, &db).await?;
+	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
@@ -72,7 +72,7 @@ pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db
 	time.nanosecond = time.nanosecond.or(Some(999_000_000));
 	let time = time.to_datetime_with_timezone(&Utc).map_err(ErrorBadRequest)?;
 
-	let mut post = get_record(&id, &time, &db).await?;
+	let mut post = get_record(&id, &time, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
@@ -80,7 +80,7 @@ pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db
 }
 
 pub async fn get_changelog(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
-	let mut history = get(&id, &db).await?;
+	let mut history = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&history, req.head())?;
 	history = unstrip_object(&history, &options).await.map_err(internal_error)?;
@@ -136,7 +136,7 @@ pub async fn submit(req: HttpRequest, ref actor: ObjectId, json: Json<Map<String
 				json.insert(ns!(as:object).to_string(), Value::Array(new_object));
 			},
 			Update => for object in get_objects_mut(json, ns!(as:object)).ok_or(ErrorBadRequest("invalid `object`"))? {
-				let mut old = get(&get_id(object)?, &db).await?;
+				let mut old = get(&get_id(object)?, &db).await?.ok_or(ErrorBadRequest("`object` not found"))?;
 				/*if old.get_str("attributedTo") != Ok(json["actor"].as_str().expect()) {
 					return Err(error::ErrorBadRequest("Unauthorized edit"));
 				}*/
@@ -164,7 +164,7 @@ pub async fn submit(req: HttpRequest, ref actor: ObjectId, json: Json<Map<String
 			},
 			Follow => (), // Follow is processed upon acceptance
 			Add => for target in get_objects(json, ns!(as:target)).ok_or(ErrorBadRequest("invalid `target`"))? {
-				let mut target = get(&get_id(target)?, &db).await?;
+				let mut target = get(&get_id(target)?, &db).await?.ok_or(ErrorBadRequest("`target` not found"))?;
 				if !is_collection(&target)? {
 					return Err(ErrorBadRequest("`target` must be a collection"))
 				}
@@ -183,7 +183,7 @@ pub async fn submit(req: HttpRequest, ref actor: ObjectId, json: Json<Map<String
 					.or_else(|| get_objects(json, ns!(as:target)))
 					.ok_or(ErrorBadRequest("invalid `origin`"))?;
 				for origin in origins {
-					let mut origin = get(&get_id(origin)?, &db).await?;
+					let mut origin = get(&get_id(origin)?, &db).await?.ok_or(ErrorBadRequest("`origin` not found"))?;
 					if !is_collection(&origin)? {
 						return Err(ErrorBadRequest("`origin` must be a collection"))
 					}

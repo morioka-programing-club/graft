@@ -1,7 +1,7 @@
 use mongodb::Client;
 use mongodb::results::InsertOneResult;
 use mongodb::options::{FindOneOptions, InsertOneOptions};
-use actix_web::error::{self, Error as ActixError};
+use actix_web::error::Error as ActixError;
 use mongodb::bson::{self, from_bson, to_bson, doc, Bson, Document};
 use chrono::{DateTime, Utc, SecondsFormat};
 use serde_json::{Value, Map};
@@ -16,26 +16,24 @@ pub async fn insert(doc: &Map<String, Value>, db: &Client) -> Result<InsertOneRe
 		.await.map_err(internal_error)
 }
 
-pub async fn get(id: &ObjectId, db: &Client) -> Result<Map<String, Value>, ActixError>
+pub async fn get(id: &ObjectId, db: &Client) -> Result<Option<Map<String, Value>>, ActixError>
 {
-	let doc = db.database(&DB_NAME).collection("objects").find_one(
+	db.database(&DB_NAME).collection("objects").find_one(
 		doc! { "_id.id": id },
 		FindOneOptions::builder().sort(Some(doc! { "_id.t": -1 })).build() // get latest
 	).await
-		.map_err(internal_error)?
-		.ok_or(error::ErrorNotFound(""))?;
-	from_db_object(doc)
+		.map_err(internal_error)
+		.map(|opt| opt.map(from_db_object).transpose()).flatten()
 }
 
-pub async fn get_record(id: &ObjectId, time: &DateTime<Utc>, db: &Client) -> Result<Map<String, Value>, ActixError>
+pub async fn get_record(id: &ObjectId, time: &DateTime<Utc>, db: &Client) -> Result<Option<Map<String, Value>>, ActixError>
 {
-	let doc = db.database(&DB_NAME).collection("objects").find_one(
+	db.database(&DB_NAME).collection("objects").find_one(
 		doc! { "_id.id": id, "_id.t": { "$lte": time } },
 		FindOneOptions::builder().sort(Some(doc! { "_id.t": -1 })).build() // get latest
 	).await
-		.map_err(internal_error)?
-		.ok_or(error::ErrorNotFound(""))?;
-	from_db_object(doc)
+		.map_err(internal_error)
+		.map(|opt| opt.map(from_db_object).transpose()).flatten()
 }
 
 fn from_db_object(mut doc: Document) -> Result<Map<String, Value>, ActixError> {

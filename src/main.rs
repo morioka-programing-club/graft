@@ -1,3 +1,5 @@
+#![feature(result_flattening)]
+
 use actix_web::{HttpServer, App, guard};
 use actix_web::web::{resource, scope, get, post, Data};
 use actix_web::middleware::Compress;
