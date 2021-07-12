@@ -48,6 +48,11 @@ lazy_static::lazy_static! {
 			"@context": {
 				"@base": "../by/"
 			}
+		},
+		ns!(as:object): {
+			"@context": {
+				"@base": "../post/"
+			}
 		}
 	});
 }
