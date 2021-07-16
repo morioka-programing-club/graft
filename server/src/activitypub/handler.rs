@@ -16,15 +16,15 @@ use super::*;
 use super::jsonld::*;
 use super::strip::*;
 
-pub async fn account(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn account(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut account = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&account, req.head())?;
 	account = unstrip_actor(&account, &options).await.map_err(internal_error)?;
-	serde_json::to_string(&compact_object(&account, context, &options).await.map_err(internal_error)?).map_err(internal_error)
+	Ok(Json(compact_object(&account, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn inbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn inbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut inbox = Map::new();
 	let options = json_ld_options(&req)?;
 	let context = context(&inbox, req.head())?;
@@ -32,10 +32,10 @@ pub async fn inbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<S
 
 	//inbox["items"] = Value::Array(get(&id, &db.collection("activities")).await?);
 
-	Ok(serde_json::to_string(&compact_object(&inbox, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&inbox, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn outbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn outbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut outbox = Map::new();
 	let options = json_ld_options(&req)?;
 	let context = context(&outbox, req.head())?;
@@ -43,26 +43,28 @@ pub async fn outbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<
 
 	//outbox["items"] = Value::Array(get(&id, &db.collection("activities")).await?);
 
-	Ok(serde_json::to_string(&compact_object(&outbox, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&outbox, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
-	Ok(serde_json::to_string(&compact_object(&post, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn activity(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn activity(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
-	Ok(serde_json::to_string(&compact_object(&post, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db: Data<Client>) ->
+	Result<Json<Map<String, Value>>, ActixError>
+{
 	// Omitting second is not supported by chrono. This workaround relies on `parse_rfc3339` parsing the field in order.
 	let mut time = chrono::format::Parsed::new();
 	let _ = chrono::format::parse(&mut time, &path.1, [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter());
@@ -76,15 +78,15 @@ pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
-	Ok(serde_json::to_string(&compact_object(&post, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
-pub async fn get_changelog(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<String, ActixError> {
+pub async fn get_changelog(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Json<Map<String, Value>>, ActixError> {
 	let mut history = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&history, req.head())?;
 	history = unstrip_object(&history, &options).await.map_err(internal_error)?;
-	Ok(serde_json::to_string(&compact_object(&history, context, &options).await.map_err(internal_error)?).map_err(internal_error)?)
+	Ok(Json(compact_object(&history, context, &options).await.map_err(internal_error)?))
 }
 
 pub async fn create_account(req: HttpRequest, mut account: Json<Map<String, Value>>, db: Data<Client>) ->
