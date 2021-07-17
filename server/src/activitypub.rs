@@ -4,6 +4,7 @@ use actix_web::{http::Method, dev::RequestHead};
 use actix_web::error::{Error, ErrorBadRequest, ErrorMethodNotAllowed};
 use chrono::{DateTime, Utc, SecondsFormat};
 use mime::Mime;
+use once_cell::sync::Lazy;
 use serde_json::{Map, Value, json};
 use json_trait::ForeignMutableJson;
 
@@ -23,39 +24,37 @@ mod strip;
 
 pub use handler::*;
 
-lazy_static::lazy_static! {
-	static ref CONTEXT: Value = Value::String(ns!(as).to_string());
-	// Setting base URLs for existing properties is technically not conformant. This context is to be provided opt-in.
-	// If we ever host this somewhere, instead of replacing this with bare URL, context object with @import will be needed
-	// to preserve the relative URL semantics.
-	static ref GRAFT_CONTEXT: Value = json!({ // Compact ids to bare oids
-		ns!(as:actor): {
-			"@context": {
-				"@base": "../of/"
-			}
-		},
-		ns!(as:attributedTo): {
-			"@context": {
-				"@base": "../of/"
-			}
-		},
-		ns!(ldp:inbox): {
-			"@context": {
-				"@base": "../for/"
-			}
-		},
-		ns!(as:outbox): {
-			"@context": {
-				"@base": "../by/"
-			}
-		},
-		ns!(as:object): {
-			"@context": {
-				"@base": "../post/"
-			}
+static CONTEXT: Lazy<Value> = Lazy::new(|| Value::String(ns!(as).to_string()));
+// Setting base URLs for existing properties is technically not conformant. This context is to be provided opt-in.
+// If we ever host this somewhere, instead of replacing this with bare URL, context object with @import will be needed
+// to preserve the relative URL semantics.
+static GRAFT_CONTEXT: Lazy<Value> = Lazy::new(|| json!({ // Compact ids to bare oids
+	ns!(as:actor): {
+		"@context": {
+			"@base": "../of/"
 		}
-	});
-}
+	},
+	ns!(as:attributedTo): {
+		"@context": {
+			"@base": "../of/"
+		}
+	},
+	ns!(ldp:inbox): {
+		"@context": {
+			"@base": "../for/"
+		}
+	},
+	ns!(as:outbox): {
+		"@context": {
+			"@base": "../by/"
+		}
+	},
+	ns!(as:object): {
+		"@context": {
+			"@base": "../post/"
+		}
+	}
+}));
 
 // Too bad macros can't easily do this.
 #[non_exhaustive]

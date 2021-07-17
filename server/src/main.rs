@@ -6,6 +6,7 @@ use actix_web::middleware::Compress;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use env_logger;
 use dotenv;
+use once_cell::sync::{Lazy, OnceCell};
 use std::env::var as env;
 
 mod db;
@@ -23,9 +24,7 @@ const HOST: &str = "localhost";
 const PORT: &str = "8088";
 const HOST_PORT: &str = concatcp!(HOST, ":", PORT);
 
-lazy_static::lazy_static! {
-	static ref DB_NAME: String = env("DB_NAME").unwrap();
-}
+static DB_NAME: Lazy<String> = Lazy::new(|| env("DB_NAME").unwrap());
 
 #[actix_web::main]
 async fn main() {
