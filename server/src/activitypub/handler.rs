@@ -94,7 +94,11 @@ pub async fn create_account(req: HttpRequest, mut account: Json<Map<String, Valu
 {
 	let id = generate_id().to_string();
 	let url = req.url_for("account", [
-		&*account.get("name").map_or(Cow::Borrowed(""), |name| Cow::Owned(name.to_string() + "-")),
+		&*if let Some(name) = account.get("name") {
+			Cow::Owned(name.as_str().ok_or(ErrorBadRequest("`name` must be string"))?.to_string() + "-")
+		} else {
+			Cow::Borrowed("")
+		},
 		&id
 	]).map_err(internal_error)?.to_string();
 	let options = json_ld_options(&req)?;
