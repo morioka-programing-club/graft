@@ -1,4 +1,6 @@
-/target
+/target/*
+!/target/fixed-import.js
+**/node_modules
 **/*.rs.bk
 *.pem
 GRAFTCONFIG

@@ -1,4 +1,6 @@
+#![feature(fn_traits)]
 #![feature(result_flattening)]
+#![feature(unboxed_closures)]
 
 use actix_web::{HttpServer, App, guard};
 use actix_web::web::{resource, scope, get, post, Data};
@@ -6,8 +8,11 @@ use actix_web::middleware::Compress;
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use env_logger;
 use dotenv;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use std::env::var as env;
+
+use nodejs::neon::handle::Handle;
+use nodejs::neon::types::JsValue;
 
 mod db;
 mod web;
@@ -36,6 +41,24 @@ async fn main() {
 	});
 
 	let db = mongodb::Client::with_uri_str(&env("CLUSTER_URI").unwrap()).await.unwrap();
+
+	let mut exec_dir = std::env::current_exe().unwrap();
+	exec_dir.pop();
+
+	web::node::eval("
+		const exec_dir = '".to_string() + exec_dir.as_os_str().to_str().unwrap() + "';
+		const fixedImport = function() {
+			try {
+				return require(`${exec_dir}/fixed-import.js`);
+			} catch {
+				// lookup parent folder for development builds
+				return require(`${exec_dir}/../fixed-import.js`);
+			}
+		}();
+		const importWithFallback = async name => (await fixedImport(`./ssr/${name}.mjs`)).default;
+		// Do not wait for it. Neon would need to support promises.
+		importWithFallback('Main').then(Main => global.Main = Main);
+	", |_: Handle<'_, JsValue>, _| ()).await.expect("loading web templates failed");
 
 	let mut server = HttpServer::new(move || {
 		// About actix-web:
@@ -123,4 +146,5 @@ async fn main() {
 	}
 
 	server.run().await.unwrap();
+	eprintln!("Shutting down");
 }

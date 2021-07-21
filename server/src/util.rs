@@ -1,4 +1,4 @@
-use std::future::{ready, Ready};
+use std::future::{Future, ready, Ready};
 use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
@@ -8,6 +8,16 @@ use serde_json::Value;
 use mongodb::bson::{self, Bson};
 use actix_web::{HttpRequest, error, FromRequest, dev::Payload};
 use url::Url as NativeUrl;
+
+// This needs to be a function in order for inference to work
+pub async fn call_handler<F, T>(handler: F, req: &HttpRequest) -> Result<<F::Output as Future>::Output, T::Error>
+where
+	F: Fn<T>,
+	F::Output: Future,
+	T: FromRequest
+{
+	Ok(handler.call(T::extract(req).await?).await)
+}
 
 pub struct Url(pub NativeUrl);
 

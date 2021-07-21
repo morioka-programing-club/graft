@@ -17,7 +17,8 @@ oxide-auth-actix = "0.1"
 openssl = { version = "0.10.34", features = ["v110"] }
 dotenv = "0.15.0"
 futures = "0.3"
-nodejs = "=0.1.1"
+nodejs = { path = "../../Rust/rust-nodejs", features = ["default-panic-hook"] }
+neon-serde = { git = "https://github.com/antonok-edm/neon-serde.git", branch = "refactor/update-neon-0.8" }
 #config = "0.11.0"
 #deadpool = "0.8.0"
 serde = "1.0.126"
@@ -29,6 +30,6 @@ once_cell = "1.8.0"
 mime = "0.3"
 #uuid = { version = "0.8.2", features = ["v4", "serde"] }
 url = { version = "2.2", features = ["serde"] }
-json-ld-rs = { path = "../json-ld-rs" }
+json-ld-rs = { git = "https://github.com/axion014/json-ld-rs" }
 json-trait = { git = "https://github.com/axion014/json-trait", features = ["impl_serde_json"] }
 cc-traits = { git = "https://github.com/axion014/cc-traits", branch = "serde-json-map"}

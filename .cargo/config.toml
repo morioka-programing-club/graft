@@ -1,0 +1,3 @@
+# According to nodejs's readme, this is necessary to build on macOS and Linux.
+# On Windows, you can (and need to? not tested) comment this out.
+build.rustflags = "-Clink-args=-rdynamic"
