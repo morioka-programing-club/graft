@@ -31,10 +31,11 @@ pub fn context(object: &Map<String, Value>, head: &RequestHead) -> Result<Vec<Va
 		Some(ctx) => vec![ctx],
 		None => vec![]
 	};
-	if get_request_type(head)?.expect("activitypub request").get_param("profile")
-		.map_or(false, |profile| profile.as_str().split(' ').any(|iri| false))
-	{
-		prepend_graft_context(&mut ctx);
+	for mime in get_request_type(head)? {
+		if mime.get_param("profile").map_or(false, |profile| profile.as_str().split(' ').any(|iri| false)) {
+			prepend_graft_context(&mut ctx);
+			break;
+		}
 	}
 	prepend_context(&mut ctx);
 	Ok(ctx)

@@ -129,26 +129,28 @@ fn copy_recipients(from: &Map<String, Value>, to: &mut Map<String, Value>) {
 	}
 }*/
 
-fn get_request_type(head: &RequestHead) -> Result<Option<Mime>, Error> {
+fn get_request_type(head: &RequestHead) -> Result<Vec<Mime>, Error> {
 	let key = match head.method {
 		Method::GET => "Accept",
 		Method::POST => "Content-Type",
 		_ => return Err(ErrorMethodNotAllowed(""))
 	};
-	head.headers.get(key).map(|ty| ty.to_str().map_err(ErrorBadRequest)?.parse().map_err(ErrorBadRequest)).transpose()
+	head.headers.get(key).map_or(Ok(vec![]), |ty| ty.to_str().map_err(ErrorBadRequest)?.split(',')
+		.map(|mime| mime.parse().map_err(ErrorBadRequest)).collect())
 }
 
 pub fn is_activitypub_request(head: &RequestHead) -> bool {
-	if let Ok(Some(mime)) = get_request_type(head) {
-		match mime.essence_str() {
-			"application/activity+json" => true,
-			"application/ld+json" => mime.get_param("profile")
-				.map_or(false, |profile| profile.as_str().split(' ').any(|iri| iri == ns!(as))),
-			_ => false
+	if let Ok(mimes) = get_request_type(head) {
+		for mime in mimes {
+			match mime.essence_str() {
+				"application/activity+json" => return true,
+				"application/ld+json" if mime.get_param("profile")
+					.map_or(false, |profile| profile.as_str().split(' ').any(|iri| iri == ns!(as))) => return true,
+				_ => ()
+			}
 		}
-	} else {
-		false
 	}
+	false
 }
 
 fn datetime(time: DateTime<Utc>) -> Value {
