@@ -17,7 +17,7 @@ oxide-auth-actix = "0.1"
 openssl = { version = "0.10.34", features = ["v110"] }
 dotenv = "0.15.0"
 futures = "0.3"
-nodejs = { path = "../../Rust/rust-nodejs", features = ["default-panic-hook"] }
+nodejs = { git = "https://github.com/axion014/rust-nodejs", features = ["default-panic-hook"] }
 neon-serde = { git = "https://github.com/antonok-edm/neon-serde.git", branch = "refactor/update-neon-0.8" }
 #config = "0.11.0"
 #deadpool = "0.8.0"
