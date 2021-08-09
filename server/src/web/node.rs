@@ -13,7 +13,7 @@ where
 	R: Send + 'static
 {
 	let (tx, rx) = futures::channel::oneshot::channel();
-    nodejs::event_queue().send(move |mut ctx| {
+    nodejs::channel().send(move |mut ctx| {
 		let ret = ctx.try_catch(cb).map_err(|err| err.to_string(&mut ctx).unwrap().value(&mut ctx));
 		// Add waiting for promise here
 		let _ = tx.send(ret);

@@ -18,7 +18,7 @@ openssl = { version = "0.10.34", features = ["v110"] }
 dotenv = "0.15.0"
 futures = "0.3"
 nodejs = { git = "https://github.com/axion014/rust-nodejs", features = ["default-panic-hook"] }
-neon-serde = { git = "https://github.com/antonok-edm/neon-serde.git", branch = "refactor/update-neon-0.8" }
+neon-serde = { git = "https://github.com/brokad/neon-serde.git", branch = "refactor/update-neon-0.9" }
 #config = "0.11.0"
 #deadpool = "0.8.0"
 serde = "1.0.126"
