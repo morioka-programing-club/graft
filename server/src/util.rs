@@ -58,7 +58,6 @@ impl Deref for Url {
 impl FromRequest for Url {
 	type Error = error::Error;
 	type Future = Ready<Result<Self, Self::Error>>;
-	type Config = ();
 
 	fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
 		ready(req.try_into())
@@ -107,7 +106,6 @@ impl FromStr for ObjectId {
 impl FromRequest for ObjectId {
 	type Error = error::Error;
 	type Future = Ready<Result<Self, Self::Error>>;
-	type Config = ();
 
 	fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
 		ready(req.match_info().get("id").expect("can't be used on routes without id in uri").parse().map_err(error::ErrorBadRequest))

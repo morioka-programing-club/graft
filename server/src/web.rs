@@ -1,49 +1,55 @@
-use std::future::Future;
-
-use futures::TryFutureExt;
+use futures::{select, FutureExt, SinkExt};
 
 use actix_web::Responder;
 use actix_web::error::Error as ActixError;
+use futures::channel::oneshot::channel;
 use serde_json::{Map, Value};
+use log::debug;
 
-use nodejs::neon::context::Context;
-use nodejs::neon::handle::Handle;
-use nodejs::neon::object::Object;
-use nodejs::neon::result::Throw;
-use nodejs::neon::types::{JsFunction, JsObject, JsString};
+use deno_runtime::worker::MainWorker;
 
+use crate::{ENTRY_MODULE, SEND_TO_JS_THREAD};
 use crate::error::internal_error;
 
 mod handler;
-pub mod node;
 
 pub use handler::*;
 
-async fn render_html(name: &'static str, prop: Map<String, Value>) -> Result<impl Responder, ActixError> {
-	render(name, prop).map_ok(|(head, body)| format!("<html><head>{}</head><body>{}</body></html>", head, body))
-		.await.map(|html| html.with_header(("Content-Type", "text/html; charset=utf-8")))
+#[derive(serde::Deserialize)]
+pub struct GeneratedHtml {
+	head: String,
+	html: String
 }
 
-fn render(name: &'static str, prop: Map<String, Value>) -> impl Future<Output = Result<(String, String), ActixError>> {
-	node::send_task_with_return_value(move |ctx| {
-		let template: Handle<JsObject> = ctx.global().get(ctx, name)?.downcast_or_throw(ctx)?;
-		let renderfn: Handle<JsFunction> = template.get(ctx, "render")?.downcast_or_throw(ctx)?;
-		let prop = neon_serde::to_value(ctx, &prop).map_err(|err| throw_neon_serde_error(ctx, err))?;
-		destructure_svelte_html(renderfn.call(ctx, template, [prop])?.downcast_or_throw(ctx)?, ctx)
-	}).map_err(internal_error)
+async fn render(name: &'static str, prop: Map<String, Value>) -> Result<impl Responder, ActixError> {
+	let (tx, rx) = channel();
+	SEND_TO_JS_THREAD.get().unwrap().lock().await.send((name, prop, tx)).await.map_err(internal_error)?;
+	rx.await.map_err(internal_error)?.map_err(internal_error)
+		.map(|GeneratedHtml {head, html}| format!("<html><head>{}</head><body>{}</body></html>", head, html)
+			.with_header(("Content-Type", "text/html; charset=utf-8")))
 }
 
-fn destructure_svelte_html<'a>(html: Handle<JsObject>, ctx: &mut impl Context<'a>) -> Result<(String, String), Throw> {
-	Ok((
-		html.get(ctx, "head")?.downcast_or_throw::<JsString, _>(ctx)?.value(ctx),
-		html.get(ctx, "html")?.downcast_or_throw::<JsString, _>(ctx)?.value(ctx)
-	))
-}
+pub async fn render_impl(deno: &mut MainWorker, name: &'static str, prop: Map<String, Value>) -> Result<GeneratedHtml, deno_core::anyhow::Error> {
+	let state = deno.js_runtime.op_state();
+	let mut state = state.borrow_mut();
+	state.put(name);
+	state.put(prop);
+	
+	// MainWorker::execute_main_module was not patched to return a value, so we copy the modified version here instead
+	let mut receiver = deno.js_runtime.mod_evaluate(*ENTRY_MODULE.get().unwrap());
+	let result = select! {
+		maybe_result = &mut receiver => {
+			debug!("received module evaluate {:#?}", maybe_result);
+			maybe_result
+		}
 
-// Not sure why this conversion was removed in neon_serde; probably something about unsafeness
-fn throw_neon_serde_error<'a>(ctx: &mut impl Context<'a>, err: neon_serde::errors::Error) -> Throw {
-    if let neon_serde::errors::ErrorKind::Js(_) = *err.kind() {
-        return Throw; // it's already thrown
-    };
-    ctx.throw_error::<_, std::convert::Infallible>(format!("{:?}", err)).err().unwrap()
+		event_loop_result = deno.run_event_loop(false).fuse() => {
+			event_loop_result?;
+			receiver.await
+		}
+	}.expect("Module evaluation result not provided.")?;
+	
+	let mut scope = deno.js_runtime.handle_scope();
+	let result = v8::Local::new(&mut scope, result);
+	serde_v8::from_v8(&mut scope, result).map_err(deno_core::anyhow::Error::new)
 }

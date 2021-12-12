@@ -5,14 +5,20 @@
 use actix_web::{HttpServer, App, guard};
 use actix_web::web::{resource, scope, get, post, Data};
 use actix_web::middleware::Compress;
+use actix_web::rt::spawn;
+use futures::StreamExt;
+use futures::lock::Mutex;
+use futures::channel::{mpsc, oneshot};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use env_logger;
 use dotenv;
-use once_cell::sync::Lazy;
+use once_cell::sync::{OnceCell, Lazy};
 use std::env::var as env;
+use serde_json::{Map, Value};
+use url::Url;
 
-use nodejs::neon::handle::Handle;
-use nodejs::neon::types::JsValue;
+use deno_core::{FsModuleLoader, ModuleId, op_sync};
+use deno_runtime::worker::{MainWorker, WorkerOptions};
 
 mod db;
 mod web;
@@ -31,6 +37,14 @@ const HOST_PORT: &str = concatcp!(HOST, ":", PORT);
 
 static DB_NAME: Lazy<String> = Lazy::new(|| env("DB_NAME").unwrap());
 
+static SEND_TO_JS_THREAD: OnceCell<Mutex<mpsc::Sender<(
+	&'static str,
+	Map<String, Value>,
+	oneshot::Sender<Result<web::GeneratedHtml, deno_core::anyhow::Error>>
+)>>> = OnceCell::new();
+
+static ENTRY_MODULE: OnceCell<ModuleId> = OnceCell::new();
+
 #[actix_web::main]
 async fn main() {
 	dotenv::from_filename("GRAFTCONFIG").ok();
@@ -41,24 +55,63 @@ async fn main() {
 	});
 
 	let db = mongodb::Client::with_uri_str(&env("CLUSTER_URI").unwrap()).await.unwrap();
+	
+	let mut deno = MainWorker::bootstrap_from_options(
+		Url::parse("graft:svelte_entry_point").unwrap(),
+		deno_runtime::permissions::Permissions::allow_all(),
+		WorkerOptions {
+			bootstrap: deno_runtime::BootstrapOptions {
+			apply_source_maps: false,
+			args: vec![],
+			cpu_count: 1,
+			debug_flag: false,
+			enable_testing_features: false,
+			location: None,
+			no_color: false,
+			runtime_version: "x".to_string(),
+			ts_version: "x".to_string(),
+			unstable: false
+			},
+			extensions: vec![],
+			unsafely_ignore_certificate_errors: None,
+			root_cert_store: None,
+			user_agent: "Deno embbeded in graft".to_string(),
+			seed: None,
+			js_error_create_fn: None,
+			create_web_worker_cb: std::sync::Arc::new(|_| unimplemented!()),
+			maybe_inspector_server: None,
+			should_break_on_first_statement: false,
+			module_loader: std::rc::Rc::new(FsModuleLoader),
+			get_error_class_fn: None,
+			origin_storage_dir: None,
+			blob_store: Default::default(),
+			broadcast_channel: Default::default(),
+			shared_array_buffer_store: None,
+			compiled_wasm_module_store: None
+		}
+	);
+	
+	ENTRY_MODULE.set(deno.js_runtime.load_main_module(
+		&Url::parse("graft:svelte_entry_point").unwrap(),
+		Some(r#"import(Deno.core.opSync("get_component"))(Deno.core.opSync("get_props"))"#.to_string())
+	).await.unwrap()).unwrap();
 
-	let mut exec_dir = std::env::current_exe().unwrap();
-	exec_dir.pop();
-
-	web::node::eval("
-		const exec_dir = '".to_string() + exec_dir.as_os_str().to_str().unwrap() + "';
-		const fixedImport = function() {
-			try {
-				return require(`${exec_dir}/fixed-import.js`);
-			} catch {
-				// lookup parent folder for development builds
-				return require(`${exec_dir}/../fixed-import.js`);
+	deno.js_runtime.register_op("get_component", op_sync(|state, _: (), _: ()| Ok(state.take::<&'static str>())));
+	deno.js_runtime.register_op("get_props", op_sync(|state, _: (), _: ()| Ok(state.take::<Value>())));
+	deno.js_runtime.sync_ops_cache();
+	
+	let (tx, mut rx) = mpsc::channel(100);
+	SEND_TO_JS_THREAD.set(Mutex::new(tx)).unwrap();
+	spawn(async move {
+		loop {
+			if let (Some((name, prop, tx)), new_stream) = rx.into_future().await {
+				rx = new_stream;
+				let _ = tx.send(web::render_impl(&mut deno, name, prop).await);
+			} else {
+				break;
 			}
-		}();
-		const importWithFallback = async name => (await fixedImport(`./ssr/${name}.mjs`)).default;
-		// Do not wait for it. Neon would need to support promises.
-		importWithFallback('Main').then(Main => global.Main = Main);
-	", |_: Handle<'_, JsValue>, _| ()).await.expect("loading web templates failed");
+		}
+	});
 
 	let mut server = HttpServer::new(move || {
 		// About actix-web:
@@ -146,5 +199,4 @@ async fn main() {
 	}
 
 	server.run().await.unwrap();
-	eprintln!("Shutting down");
 }
