@@ -1,0 +1,17 @@
+comment_width = 180
+edition = "2018"
+format_macro_bodies = true
+format_macro_matchers = true
+hard_tabs = true
+imports_granularity = "Module"
+max_width = 180
+newline_style = "Unix"
+normalize_comments = true
+normalize_doc_attributes = true
+overflow_delimited_expr = true
+reorder_impl_items = false
+report_fixme = "Never"  # Set to Unnumbered
+report_todo = "Never"  # Set to Unnumbered
+trailing_comma = "Never"
+use_field_init_shorthand = true
+use_try_shorthand = true

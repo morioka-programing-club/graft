@@ -1,8 +1,9 @@
-use actix_web::{HttpRequest, Responder, error::{Error as ActixError}};
+use actix_web::error::Error as ActixError;
+use actix_web::{HttpRequest, Responder};
 
+use super::render;
 use crate::activitypub;
 use crate::util::call_handler;
-use super::render;
 
 pub async fn account() -> Result<String, ActixError> {
 	todo!()
@@ -19,4 +20,3 @@ pub async fn record() -> Result<String, ActixError> {
 pub async fn mentions() -> Result<String, ActixError> {
 	todo!()
 }
-

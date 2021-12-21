@@ -5,15 +5,15 @@ authors = ["axion014 <axion014@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-mongodb = { version = "2.0.0-beta.2", features = ["bson-chrono-0_4"] }
+mongodb = { version = "2.1.0", features = ["bson-chrono-0_4"] }
 #bytes = "1.0.1"
 #async-recursion = "0.3.2"
 #async-trait = "0.1.50"
 actix-web = { version = "4.0.0-beta.14", features = ["openssl"] }
 bytes = "1.0"
 const_format = "0.2"
-deno_core = { git = "https://github.com/axion014/deno", branch = "mod_evaluate_return_value" }
-deno_runtime = { git = "https://github.com/axion014/deno", branch = "mod_evaluate_return_value" }
+deno_core = "0.111.0"
+deno_runtime = "0.37.0"
 oxide-auth = "0.5"
 oxide-auth-actix = "0.1"
 openssl = { version = "0.10.34", features = ["v110"] }

@@ -1,39 +1,42 @@
-use mongodb::Client;
-use mongodb::results::InsertOneResult;
-use mongodb::options::{FindOneOptions, InsertOneOptions};
 use actix_web::error::Error as ActixError;
-use mongodb::bson::{self, from_bson, to_bson, doc, Bson, Document};
-use chrono::{DateTime, Utc, SecondsFormat};
-use serde_json::{Value, Map};
+use chrono::{DateTime, SecondsFormat, Utc};
+use mongodb::bson::{self, doc, from_bson, to_bson, Bson, Document};
+use mongodb::options::{FindOneOptions, InsertOneOptions};
+use mongodb::results::InsertOneResult;
+use mongodb::Client;
+use serde_json::{Map, Value};
 
-use crate::DB_NAME;
-use crate::util::ObjectId;
 use crate::error::internal_error;
+use crate::util::ObjectId;
+use crate::DB_NAME;
 
 pub async fn insert(doc: &Map<String, Value>, db: &Client) -> Result<InsertOneResult, ActixError> {
-	db.database(&DB_NAME).collection("objects")
+	db.database(&DB_NAME)
+		.collection("objects")
 		.insert_one(to_db_object(doc)?, InsertOneOptions::default())
-		.await.map_err(internal_error)
+		.await
+		.map_err(internal_error)
 }
 
-pub async fn get(id: &ObjectId, db: &Client) -> Result<Option<Map<String, Value>>, ActixError>
-{
-	db.database(&DB_NAME).collection("objects").find_one(
-		doc! { "_id.id": id },
-		FindOneOptions::builder().sort(Some(doc! { "_id.t": -1 })).build() // get latest
-	).await
+async fn get_with_query(db: &Client, query: Document) -> Result<Option<Map<String, Value>>, ActixError> {
+	db.database(&DB_NAME)
+		.collection("objects")
+		.find_one(
+			query,
+			FindOneOptions::builder().sort(Some(doc! { "_id.t": -1 })).build() // get latest
+		)
+		.await
 		.map_err(internal_error)
-		.map(|opt| opt.map(from_db_object).transpose()).flatten()
+		.map(|opt| opt.map(from_db_object).transpose())
+		.flatten()
 }
 
-pub async fn get_record(id: &ObjectId, time: &DateTime<Utc>, db: &Client) -> Result<Option<Map<String, Value>>, ActixError>
-{
-	db.database(&DB_NAME).collection("objects").find_one(
-		doc! { "_id.id": id, "_id.t": { "$lte": time } },
-		FindOneOptions::builder().sort(Some(doc! { "_id.t": -1 })).build() // get latest
-	).await
-		.map_err(internal_error)
-		.map(|opt| opt.map(from_db_object).transpose()).flatten()
+pub async fn get(id: &ObjectId, db: &Client) -> Result<Option<Map<String, Value>>, ActixError> {
+	get_with_query(db, doc! { "_id.id": id }).await
+}
+
+pub async fn get_record(id: &ObjectId, time: &DateTime<Utc>, db: &Client) -> Result<Option<Map<String, Value>>, ActixError> {
+	get_with_query(db, doc! { "_id.id": id, "_id.t": { "$lte": time } }).await
 }
 
 fn from_db_object(mut doc: Document) -> Result<Map<String, Value>, ActixError> {
@@ -55,11 +58,7 @@ fn from_db_object(mut doc: Document) -> Result<Map<String, Value>, ActixError> {
 fn to_db_object(object: &Map<String, Value>) -> Result<Document, ActixError> {
 	let mut bson = to_bson(object).map_err(internal_error)?;
 	parse_bson_values(&mut bson);
-	let mut doc = if let Bson::Document(doc) = bson {
-		doc
-	} else {
-		unreachable!()
-	};
+	let mut doc = if let Bson::Document(doc) = bson { doc } else { unreachable!() };
 	let id = doc.remove("id").ok_or_else(|| internal_error("`id` is missing"))?;
 	let updated = doc.remove("updated").ok_or_else(|| internal_error("`updated` is missing"))?;
 	doc.insert("_id", doc! { "id": id, "t": updated });
@@ -67,10 +66,15 @@ fn to_db_object(object: &Map<String, Value>) -> Result<Document, ActixError> {
 }
 
 fn parse_bson_values(bson: &mut Bson) {
-	traverse_bson(bson, &mut |bson| if let Bson::String(s) = bson {
-		// Some plain strings may also gets coerced here, but they should be converted back anyway
-		if let Ok(oid) = s.parse::<bson::oid::ObjectId>() { *bson = Bson::ObjectId(oid) }
-		else if let Ok(time) = s.parse::<DateTime<Utc>>() { *bson = Bson::DateTime(time.into()) }
+	traverse_bson(bson, &mut |bson| {
+		if let Bson::String(s) = bson {
+			// Some plain strings may also gets coerced here, but they should be converted back anyway
+			if let Ok(oid) = s.parse::<bson::oid::ObjectId>() {
+				*bson = Bson::ObjectId(oid)
+			} else if let Ok(time) = s.parse::<DateTime<Utc>>() {
+				*bson = Bson::DateTime(time.into())
+			}
+		}
 	});
 }
 
@@ -78,16 +82,24 @@ fn traverse_bson(bson: &mut Bson, f: &mut impl FnMut(&mut Bson)) {
 	f(bson);
 	match bson {
 		// Hack with slight performance loss. `&mut bson::Document` really needs an `IntoIterator` impl.
-		Bson::Document(doc) => for k in doc.keys().cloned().collect::<Vec<_>>() { traverse_bson(doc.get_mut(k).unwrap(), f); },
-		Bson::Array(array) => for prop in array { traverse_bson(prop, f); },
+		Bson::Document(doc) => {
+			for k in doc.keys().cloned().collect::<Vec<_>>() {
+				traverse_bson(doc.get_mut(k).unwrap(), f);
+			}
+		}
+		Bson::Array(array) => {
+			for prop in array {
+				traverse_bson(prop, f);
+			}
+		}
 		_ => ()
 	}
 }
 
-/*fn from_oid(id: Bson) -> Option<String> {
-	if let Bson::Binary(Binary { bytes: id, .. }) = id {
-		Some(format!("{:x}", Bytes::from(id)))
-	} else {
-		None
-	}
-}*/
+// fn from_oid(id: Bson) -> Option<String> {
+// if let Bson::Binary(Binary { bytes: id, .. }) = id {
+// Some(format!("{:x}", Bytes::from(id)))
+// } else {
+// None
+// }
+// }

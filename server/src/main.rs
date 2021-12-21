@@ -2,30 +2,28 @@
 #![feature(result_flattening)]
 #![feature(unboxed_closures)]
 
-use actix_web::{HttpServer, App, guard};
-use actix_web::web::{resource, scope, get, post, Data};
-use actix_web::middleware::Compress;
+use actix_web::middleware::{Compress, Logger};
 use actix_web::rt::spawn;
-use futures::StreamExt;
-use futures::lock::Mutex;
+use actix_web::web::{get, post, resource, scope, Data};
+use actix_web::{guard, App, HttpServer};
 use futures::channel::{mpsc, oneshot};
+use futures::lock::Mutex;
+use futures::StreamExt;
+use once_cell::sync::{Lazy, OnceCell};
 use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-use env_logger;
-use dotenv;
-use once_cell::sync::{OnceCell, Lazy};
-use std::env::var as env;
 use serde_json::{Map, Value};
+use std::env::var as env;
 use url::Url;
 
-use deno_core::{FsModuleLoader, ModuleId, op_sync};
+use deno_core::{op_sync, FsModuleLoader, ModuleId};
 use deno_runtime::worker::{MainWorker, WorkerOptions};
 
-mod db;
-mod web;
-mod util;
 mod activitypub;
 mod auth;
+mod db;
 mod error;
+mod util;
+mod web;
 
 use activitypub::is_activitypub_request;
 
@@ -37,13 +35,7 @@ const HOST_PORT: &str = concatcp!(HOST, ":", PORT);
 
 static DB_NAME: Lazy<String> = Lazy::new(|| env("DB_NAME").unwrap());
 
-static SEND_TO_JS_THREAD: OnceCell<Mutex<mpsc::Sender<(
-	&'static str,
-	Map<String, Value>,
-	oneshot::Sender<Result<web::GeneratedHtml, deno_core::anyhow::Error>>
-)>>> = OnceCell::new();
-
-static ENTRY_MODULE: OnceCell<ModuleId> = OnceCell::new();
+static SEND_TO_JS_THREAD: OnceCell<Mutex<mpsc::Sender<(String, Map<String, Value>, oneshot::Sender<Result<web::GeneratedHtml, deno_core::anyhow::Error>>)>>> = OnceCell::new();
 
 #[actix_web::main]
 async fn main() {
@@ -55,22 +47,22 @@ async fn main() {
 	});
 
 	let db = mongodb::Client::with_uri_str(&env("CLUSTER_URI").unwrap()).await.unwrap();
-	
+
 	let mut deno = MainWorker::bootstrap_from_options(
 		Url::parse("graft:svelte_entry_point").unwrap(),
 		deno_runtime::permissions::Permissions::allow_all(),
 		WorkerOptions {
 			bootstrap: deno_runtime::BootstrapOptions {
-			apply_source_maps: false,
-			args: vec![],
-			cpu_count: 1,
-			debug_flag: false,
-			enable_testing_features: false,
-			location: None,
-			no_color: false,
-			runtime_version: "x".to_string(),
-			ts_version: "x".to_string(),
-			unstable: false
+				apply_source_maps: false,
+				args: vec![],
+				cpu_count: 1,
+				debug_flag: false,
+				enable_testing_features: false,
+				location: None,
+				no_color: false,
+				runtime_version: "x".to_string(),
+				ts_version: "x".to_string(),
+				unstable: false
 			},
 			extensions: vec![],
 			unsafely_ignore_certificate_errors: None,
@@ -90,16 +82,12 @@ async fn main() {
 			compiled_wasm_module_store: None
 		}
 	);
-	
-	ENTRY_MODULE.set(deno.js_runtime.load_main_module(
-		&Url::parse("graft:svelte_entry_point").unwrap(),
-		Some(r#"import(Deno.core.opSync("get_component"))(Deno.core.opSync("get_props"))"#.to_string())
-	).await.unwrap()).unwrap();
 
-	deno.js_runtime.register_op("get_component", op_sync(|state, _: (), _: ()| Ok(state.take::<&'static str>())));
-	deno.js_runtime.register_op("get_props", op_sync(|state, _: (), _: ()| Ok(state.take::<Value>())));
+	deno.js_runtime.register_op("get_component", op_sync(|state, _: (), _: ()| Ok(state.take::<String>())));
+	deno.js_runtime
+		.register_op("get_props", op_sync(|state, _: (), _: ()| Ok(state.take::<Map<String, Value>>())));
 	deno.js_runtime.sync_ops_cache();
-	
+
 	let (tx, mut rx) = mpsc::channel(100);
 	SEND_TO_JS_THREAD.set(Mutex::new(tx)).unwrap();
 	spawn(async move {
@@ -137,6 +125,7 @@ async fn main() {
 		// If a pseudonym signifying your community, it's a nice way to brevity.
 		// If it means anything else, I don't recommend it.
 		App::new()
+			.wrap(Logger::default())
 			.wrap(Compress::default())
 			.app_data(Data::new(db.clone()))
 			/*.service(resource("/auth")
@@ -152,7 +141,7 @@ async fn main() {
 				.name("outbox")
 				.route(get().guard(is_activitypub_request).to(activitypub::outbox))
 				.route(post().guard(is_activitypub_request).to(activitypub::submit))
-			).service(scope("/post/")
+			).service(scope("/post")
 				.service(resource(r"{url_decoration:([^-/]+-)?}{time:\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?Z}-{id:[^-/]+}")
 					.route(get().guard(guard::Not(is_activitypub_request)).to(web::record))
 					.route(get().guard(is_activitypub_request).to(activitypub::record))
@@ -183,11 +172,13 @@ async fn main() {
 		loop {
 			match builder.set_private_key_file(env("KEY").unwrap(), SslFiletype::PEM) {
 				Ok(_) => break,
-				Err(e) => if e.errors()[0].reason() == Some("bad decrypt") {
-					eprintln!("Wrong password")
-				} else {
-					eprintln!("An error happened while verifying certification: {}", e);
-					std::process::exit(1)
+				Err(e) => {
+					if e.errors()[0].reason() == Some("bad decrypt") {
+						eprintln!("Wrong password")
+					} else {
+						eprintln!("An error happened while verifying certification: {}", e);
+						std::process::exit(1)
+					}
 				}
 			}
 		}

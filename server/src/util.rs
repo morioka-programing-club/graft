@@ -1,12 +1,14 @@
-use std::future::{Future, ready, Ready};
-use std::str::FromStr;
 use std::convert::{TryFrom, TryInto};
+use std::future::{ready, Future, Ready};
 use std::ops::Deref;
+use std::str::FromStr;
 
+use actix_web::dev::Payload;
+use actix_web::{error, FromRequest, HttpRequest};
+use mongodb::bson::{self, Bson};
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde_json::Value;
-use mongodb::bson::{self, Bson};
-use actix_web::{HttpRequest, error, FromRequest, dev::Payload};
 use url::Url as NativeUrl;
 
 // This needs to be a function in order for inference to work
@@ -27,12 +29,7 @@ impl TryFrom<&HttpRequest> for Url {
 		let path = req.path();
 		let url = if path.starts_with('/') {
 			let conn = req.connection_info();
-			(&format!(
-				"{}://{}{}",
-				conn.scheme(),
-				conn.host(),
-				path
-			)).parse()
+			(&format!("{}://{}{}", conn.scheme(), conn.host(), path)).parse()
 		} else {
 			path.parse()
 		};
@@ -64,17 +61,17 @@ impl FromRequest for Url {
 	}
 }
 
-/*pub fn url_for(req: &HttpRequest) -> Result<NativeUrl, error::Error> {
-	let id = req.match_info().get("id").ok_or(error::ErrorInternalServerError("Internal Server Error"))?;
-	url_for_id(req, id)
-}*/
+// pub fn url_for(req: &HttpRequest) -> Result<NativeUrl, error::Error> {
+// let id = req.match_info().get("id").ok_or(error::ErrorInternalServerError("Internal Server Error"))?;
+// url_for_id(req, id)
+// }
 
 #[derive(Debug, Deserialize)]
 pub struct ObjectId(bson::oid::ObjectId);
 
 impl ToString for ObjectId {
 	fn to_string(&self) -> String {
-		//self.0.to_simple().encode_lower(&mut [0u8; 32]).to_string()
+		// self.0.to_simple().encode_lower(&mut [0u8; 32]).to_string()
 		self.0.to_hex()
 	}
 }
@@ -108,13 +105,19 @@ impl FromRequest for ObjectId {
 	type Future = Ready<Result<Self, Self::Error>>;
 
 	fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-		ready(req.match_info().get("id").expect("can't be used on routes without id in uri").parse().map_err(error::ErrorBadRequest))
+		ready(
+			req.match_info()
+				.get("id")
+				.expect("can't be used on routes without id in uri")
+				.parse()
+				.map_err(error::ErrorBadRequest)
+		)
 	}
 }
 
 impl From<&ObjectId> for Bson {
 	fn from(id: &ObjectId) -> Self {
-		//Bson::Binary(Binary { subtype: mongodb::bson::spec::BinarySubtype::Uuid, bytes: (id.0.as_bytes() as &[u8]).into() })
+		// Bson::Binary(Binary { subtype: mongodb::bson::spec::BinarySubtype::Uuid, bytes: (id.0.as_bytes() as &[u8]).into() })
 		Bson::ObjectId(id.0)
 	}
 }
@@ -130,6 +133,16 @@ pub fn get_oid(url: &str) -> Option<&str> {
 }
 
 pub fn generate_id() -> ObjectId {
-	//ObjectId(Uuid::new_v4())
+	// ObjectId(Uuid::new_v4())
 	ObjectId(bson::oid::ObjectId::new())
+}
+
+static BASE_DIR: Lazy<&'static str> = Lazy::new(|| {
+	let exec_dir = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
+	let base_dir_candidate = exec_dir.join("ssr/");
+	Box::leak(("file://".to_string() + if base_dir_candidate.exists() { base_dir_candidate } else { exec_dir.join("../ssr/") }.to_str().unwrap()).into_boxed_str())
+});
+
+pub fn resolve_component(name: &'static str) -> String {
+	BASE_DIR.to_string() + name + ".mjs"
 }
