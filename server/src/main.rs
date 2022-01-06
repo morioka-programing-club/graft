@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use std::env::var as env;
 use url::Url;
 
-use deno_core::{op_sync, FsModuleLoader, ModuleId};
+use deno_core::{op_sync, FsModuleLoader};
 use deno_runtime::worker::{MainWorker, WorkerOptions};
 
 mod activitypub;
@@ -37,10 +37,14 @@ static DB_NAME: Lazy<String> = Lazy::new(|| env("DB_NAME").unwrap());
 
 static SEND_TO_JS_THREAD: OnceCell<Mutex<mpsc::Sender<(String, Map<String, Value>, oneshot::Sender<Result<web::GeneratedHtml, deno_core::anyhow::Error>>)>>> = OnceCell::new();
 
-#[actix_web::main]
-async fn main() {
+#[ctor::ctor]
+fn global_setup() {
 	dotenv::from_filename("GRAFTCONFIG").ok();
 	env_logger::init();
+}
+
+#[actix_web::main]
+async fn main() {
 	let ssl = env("SSL").map_or(true, |ssl| match ssl.as_str() {
 		"false" | "0" => false,
 		_ => true

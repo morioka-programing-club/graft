@@ -19,15 +19,21 @@ pub fn json_ld_options(req: &HttpRequest) -> Result<JsonLdOptions<'static, Value
 	})
 }
 
-pub fn prepend_graft_context(context: &mut Vec<Value>) {
+pub fn insert_graft_context(context: &mut Vec<Value>) {
 	if context.iter().all(|ctx| ctx != &*GRAFT_CONTEXT) {
-		context.insert(0, GRAFT_CONTEXT.clone());
+		context.insert(
+			context.iter().enumerate().find(|(_, ctx)| ctx == &&*CONTEXT).map(|(i, _)| i + 1).unwrap_or(0),
+			GRAFT_CONTEXT.clone()
+		);
 	}
 }
 
-pub fn prepend_context(context: &mut Vec<Value>) {
+pub fn insert_context(context: &mut Vec<Value>) {
 	if context.iter().all(|ctx| ctx != &*CONTEXT) {
-		context.insert(0, CONTEXT.clone());
+		context.insert(
+			context.iter().enumerate().find(|(_, ctx)| ctx == &&*GRAFT_CONTEXT).map(|(i, _)| i).unwrap_or(0),
+			CONTEXT.clone()
+		);
 	}
 }
 
@@ -39,11 +45,11 @@ pub fn context(object: &Map<String, Value>, head: &RequestHead) -> Result<Vec<Va
 	};
 	for mime in get_request_type(head)? {
 		if mime.get_param("profile").map_or(false, |profile| profile.as_str().split(' ').any(|iri| false)) {
-			prepend_graft_context(&mut ctx);
+			insert_graft_context(&mut ctx);
 			break;
 		}
 	}
-	prepend_context(&mut ctx);
+	insert_context(&mut ctx);
 	Ok(ctx)
 }
 

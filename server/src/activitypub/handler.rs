@@ -23,7 +23,7 @@ pub async fn account(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result
 	let mut account = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&account, req.head())?;
-	account = unstrip_actor(&account, &options).await.map_err(internal_error)?;
+	account = unstrip_actor(account, &options).await.map_err(internal_error)?;
 	Ok(Json(compact_object(&account, context, &options).await.map_err(internal_error)?))
 }
 
@@ -31,7 +31,7 @@ pub async fn inbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<J
 	let mut inbox = Map::new();
 	let options = json_ld_options(&req)?;
 	let context = context(&inbox, req.head())?;
-	inbox = unstrip_object(&inbox, &options).await.map_err(internal_error)?;
+	inbox = unstrip_object(inbox, &options).await.map_err(internal_error)?;
 
 	// inbox["items"] = Value::Array(get(&id, &db.collection("activities")).await?);
 
@@ -42,7 +42,7 @@ pub async fn outbox(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<
 	let mut outbox = Map::new();
 	let options = json_ld_options(&req)?;
 	let context = context(&outbox, req.head())?;
-	outbox = unstrip_object(&outbox, &options).await.map_err(internal_error)?;
+	outbox = unstrip_object(outbox, &options).await.map_err(internal_error)?;
 
 	// outbox["items"] = Value::Array(get(&id, &db.collection("activities")).await?);
 
@@ -53,7 +53,7 @@ pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Js
 	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
-	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
+	post = unstrip_object(post, &options).await.map_err(internal_error)?;
 	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
@@ -61,7 +61,7 @@ pub async fn activity(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Resul
 	let mut post = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
-	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
+	post = unstrip_object(post, &options).await.map_err(internal_error)?;
 	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
@@ -78,7 +78,7 @@ pub async fn record(req: HttpRequest, path: Path<((), String)>, id: ObjectId, db
 	let mut post = get_record(&id, &time, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
-	post = unstrip_object(&post, &options).await.map_err(internal_error)?;
+	post = unstrip_object(post, &options).await.map_err(internal_error)?;
 	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
@@ -86,7 +86,7 @@ pub async fn get_changelog(req: HttpRequest, id: ObjectId, db: Data<Client>) -> 
 	let mut history = get(&id, &db).await?.ok_or(ErrorNotFound(""))?;
 	let options = json_ld_options(&req)?;
 	let context = context(&history, req.head())?;
-	history = unstrip_object(&history, &options).await.map_err(internal_error)?;
+	history = unstrip_object(history, &options).await.map_err(internal_error)?;
 	Ok(Json(compact_object(&history, context, &options).await.map_err(internal_error)?))
 }
 
@@ -138,7 +138,7 @@ pub async fn submit(req: HttpRequest, ref actor: ObjectId, json: Json<Map<String
 				for mut object in take_objects(json, ns!(as:object)).ok_or(ErrorBadRequest("invalid `object`"))? {
 					copy_recipients(json, &mut object);
 					copy_recipients(&object, json);
-					object.insert(ns!(as:attributedTo).to_string(), json!(Value, {"@id": actor.to_string()}));
+					object.insert(ns!(as:attributedTo).to_string(), json!(Value, {"@id": "../of/".to_string() + &actor.to_string()}));
 					object.insert("@id".to_string(), generate_id().to_string().into()); // Overwrite any existing id
 
 					object.insert(ns!(as:published).to_string(), timestamp.clone());

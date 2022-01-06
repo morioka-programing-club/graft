@@ -1,9 +1,8 @@
-use futures::{select, FutureExt, SinkExt};
+use futures::SinkExt;
 
 use actix_web::error::Error as ActixError;
 use actix_web::Responder;
 use futures::channel::oneshot::channel;
-use log::debug;
 use serde_json::{Map, Value};
 
 use deno_core::anyhow::Context;

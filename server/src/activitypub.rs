@@ -36,7 +36,9 @@ static GRAFT_CONTEXT: Lazy<Value> = Lazy::new(|| {
 				"@base": "../of/"
 			}
 		},
-		ns!(as:attributedTo): {
+		"attributedTo": {
+			"@id": "as:attributedTo",
+			"@type": "@id",
 			"@context": {
 				"@base": "../of/"
 			}
