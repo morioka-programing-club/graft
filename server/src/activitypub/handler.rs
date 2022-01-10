@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use super::jsonld::*;
 use super::strip::*;
 use super::*;
-use crate::db::{get, get_record, insert};
+use crate::db::{get, get_record, get_replies, insert};
 use crate::error::internal_error;
 use crate::util::*;
 
@@ -54,6 +54,25 @@ pub async fn post(req: HttpRequest, id: ObjectId, db: Data<Client>) -> Result<Js
 	let options = json_ld_options(&req)?;
 	let context = context(&post, req.head())?;
 	post = unstrip_object(post, &options).await.map_err(internal_error)?;
+	let mut replies = post
+		.entry("@reverse")
+		.or_insert(json!(Value, {}))
+		.as_object_mut()
+		.unwrap()
+		.entry(ns!(as:inReplyTo))
+		.or_insert(json!(Value, []))
+		.as_array_mut()
+		.unwrap();
+	replies.extend(
+		get_replies(&id, &db)
+			.await?
+			.into_iter()
+			.map(|mut reply| {
+				reply.remove("inReplyTo");
+				reply
+			})
+			.map(Value::Object)
+	);
 	Ok(Json(compact_object(&post, context, &options).await.map_err(internal_error)?))
 }
 
