@@ -59,6 +59,10 @@ pub async fn get_replies(id: &ObjectId, db: &Client) -> Result<Vec<Map<String, V
 	get_all_with_query(db, doc! { "inReplyTo": id }).await
 }
 
+pub async fn get_children(id: &ObjectId, db: &Client) -> Result<Vec<Map<String, Value>>, ActixError> {
+	get_all_with_query(db, doc! { "context": id }).await
+}
+
 fn from_db_object(mut doc: Document) -> Result<Map<String, Value>, ActixError> {
 	if let Bson::Document(mut _id) = doc.remove("_id").ok_or_else(|| internal_error("`_id` is missing"))? {
 		doc.insert("id", _id.remove("id").ok_or_else(|| internal_error("`_id.id` is missing"))?);
