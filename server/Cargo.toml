@@ -17,7 +17,7 @@ deno_core = "0.111.0"
 deno_runtime = "0.37.0"
 oxide-auth = "0.5"
 oxide-auth-actix = "0.1"
-openssl = { version = "0.10.34", features = ["v110"] }
+openssl = { version = "0.10.48", features = ["v110"] }
 dotenv = "0.15.0"
 futures = "0.3"
 #config = "0.11.0"
